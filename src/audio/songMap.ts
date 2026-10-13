@@ -1,5 +1,6 @@
 import { FeatureExtractor } from './FeatureExtractor';
 import { fftMagDb } from './fft';
+import { FamilyCollector, type FamilyTrack } from './soundFamilies';
 
 /**
  * A whole-song analysis built ahead of time for files (not the microphone).
@@ -19,6 +20,8 @@ export interface SongMap {
   anticipation: [number, number][]; // [start, drop time] ramps leading into each drop
   /** dB percentiles [p5, p99] for priming the adaptive normalisers */
   levels: { bass: [number, number]; mid: [number, number]; high: [number, number]; loud: [number, number] };
+  /** sound families over the whole song (centred, look-ahead separation) */
+  families: FamilyTrack | null;
 }
 
 export interface MapHit {
@@ -152,6 +155,7 @@ export function buildSongMap(pcm: Float32Array, sr: number, onProgress?: (p: num
   const highDb = new Float32Array(nFrames);
   const loudDb = new Float32Array(nFrames);
   const inten = new Float32Array(nFrames);
+  const fam = new FamilyCollector(fps, N / sr);
   for (let i = 0; i < nFrames; i++) {
     const t = N / sr + i * dt;
     const end = Math.floor(t * sr);
@@ -163,7 +167,8 @@ export function buildSongMap(pcm: Float32Array, sr: number, onProgress?: (p: num
     highDb[i] = f.highDb;
     loudDb[i] = f.loudnessDb;
     inten[i] = f.intensity;
-    if (onProgress && i % 1500 === 0) onProgress(i / nFrames);
+    fam.push(freq, sr / N, f.loudnessDb);
+    if (onProgress && i % 1500 === 0) onProgress(0.8 * (i / nFrames));
   }
   const tOf = (i: number) => N / sr + i * dt;
 
@@ -282,9 +287,11 @@ export function buildSongMap(pcm: Float32Array, sr: number, onProgress?: (p: num
   }
   drops.sort((x, y) => x.t - y.t);
   anticipation.sort((x, y) => x[1] - y[1]);
+  onProgress?.(0.85);
+  const families = nFrames > 0 ? fam.build(SILENCE_DB) : null;
   onProgress?.(1);
 
-  return { duration, bpm, beats, beatConfidence, breakdowns, drops, anticipation, levels };
+  return { duration, bpm, beats, beatConfidence, breakdowns, drops, anticipation, levels, families };
 }
 
 /** Index of the last beat at or before t (-1 if before the first). */

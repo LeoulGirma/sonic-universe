@@ -2,6 +2,23 @@ import { AdaptiveRange, Envelope, RunningStats, clamp01, expCoef } from './dsp';
 import { BeatTracker } from './BeatTracker';
 import type { MapHit, SongMap } from './songMap';
 import { anticipationAt, beatIndexAt } from './songMap';
+import { F as FAM, FamilyTracker, NF, famFrame } from './soundFamilies';
+
+/** Which kinds of sound are playing (see soundFamilies.ts). Index with F.kick … F.lead. */
+export interface FamilyFeatures {
+  level: number[]; // 0..1 smoothed presence per family
+  hit: number[]; // onset impulse per family (jumps to the onset's strength, decays)
+  count: number[]; // onsets so far per family (kick uses the confirmed low-hit detector)
+  melody: number; // 0..1 height of the moving harmonic part (melody register), smoothed
+  hue: number; // 0..1 harmony colour (circle of fifths)
+  hueStrength: number; // 0..1 how clearly tonal the sustained part is
+}
+const createFam = (): FamilyFeatures => ({
+  level: new Array(NF).fill(0), hit: new Array(NF).fill(0), count: new Array(NF).fill(0), melody: 0.3, hue: 0, hueStrength: 0,
+});
+// attack / release (s) per family: percussive families snap, harmonic ones breathe
+const FAM_ENV: [number, number][] = [[0.01, 0.14], [0.01, 0.12], [0.005, 0.09], [0.03, 0.25], [0.15, 0.6], [0.03, 0.3]];
+const FAM_HIT_TAU = [0.18, 0.14, 0.09, 0.2, 0.6, 0.25];
 
 export type Section = 'silent' | 'groove' | 'breakdown' | 'build' | 'drop';
 
@@ -49,6 +66,7 @@ export interface MusicFeatures {
   track: number; // increments every time a new source starts (reset)
   beatIndex: number; // with a song map: index of the last map beat (-1 before the first); live: beats counted so far
   map: SongMap | null; // the whole-song analysis, when one is loaded
+  fam: FamilyFeatures;
 }
 
 export const createFeatures = (): MusicFeatures => ({
@@ -58,6 +76,7 @@ export const createFeatures = (): MusicFeatures => ({
   onset: 0, kick: 0, hat: 0, kickCount: 0, hatCount: 0, onsetCount: 0,
   bpm: 0, beatConfidence: 0, beatPhase: 0, beat: false, beatCount: 0,
   intensity: 0, breakdown: 0, build: 0, drop: 0, dropCount: 0, section: 'silent', track: 0, beatIndex: -1, map: null,
+  fam: createFam(),
 });
 
 /** Frequency bands in Hz. */
@@ -147,6 +166,10 @@ export class FeatureExtractor {
   private started = false;
 
   readonly beats = new BeatTracker();
+  private famTracker = new FamilyTracker();
+  private famEnv = FAM_ENV.map(([a, r]) => new Envelope(a, r));
+  private famEv = new Int32Array(NF); // next map event per family
+  private lastKickCountForFam = 0;
 
   /** Called for every confirmed low-end hit (used by the song-map builder). */
   onHit: ((h: MapHit) => void) | null = null;
@@ -203,6 +226,10 @@ export class FeatureExtractor {
     this.started = false;
     this.elapsed = 0;
     this.beats.reset();
+    this.famTracker.reset();
+    for (const e of this.famEnv) e.reset(0);
+    this.famEv.fill(0);
+    this.lastKickCountForFam = 0;
   }
 
   /** Call on seek: transient history is invalid, normalisation is kept. */
@@ -213,6 +240,62 @@ export class FeatureExtractor {
     this.kickCand = null;
     this.beats.reset();
     this.lastKickT = -10;
+    this.famEv.fill(-1); // re-find on the next frame
+  }
+
+  /** Sound families: exact from the song map when there is one, causal live analysis otherwise. */
+  private families(freqDb: Float32Array, t: number, dt: number, silent: boolean, jumped: boolean) {
+    const fam = this.f.fam;
+    for (let k = 0; k < NF; k++) fam.hit[k] *= Math.exp(-dt / FAM_HIT_TAU[k]);
+    const tr = this.map?.families;
+    const raw: number[] = tr ? tr.level.map((l) => l[famFrame(tr, t)]) : Array.from(this.famTracker.level);
+    // live, a causal median can't tell a new bass note's first frames from a kick; the confirmed
+    // low-hit detector can (two-stage, low-end share, song ceiling), so it drives the kick family
+    if (!tr) raw[FAM.kick] = this.f.kick;
+    if (tr) {
+      const i = famFrame(tr, t);
+      if (tr.melody[i] >= 0) fam.melody += (tr.melody[i] - fam.melody) * expCoef(dt, 0.12);
+      fam.hue = tr.hue[i];
+      fam.hueStrength = tr.hueStrength[i];
+      for (let k = 0; k < NF; k++) {
+        const ev = tr.events[k];
+        if (jumped || this.famEv[k] < 0) {
+          // after a seek: skip to the first event after now, without firing
+          let lo = 0, hi = ev.length;
+          while (lo < hi) { const m = (lo + hi) >> 1; if (ev[m] <= t) lo = m + 1; else hi = m; }
+          this.famEv[k] = lo;
+          continue;
+        }
+        while (this.famEv[k] < ev.length && ev[this.famEv[k]] <= t) {
+          if (k !== FAM.kick) {
+            fam.count[k]++;
+            fam.hit[k] = Math.max(fam.hit[k], tr.eventStrength[k][this.famEv[k]]);
+          }
+          this.famEv[k]++;
+        }
+      }
+    } else {
+      this.famTracker.process(freqDb, this.binHz, t, dt, !silent);
+      const m = this.famTracker.onsetMask;
+      for (let k = 0; k < NF; k++) {
+        if (k !== FAM.kick && m & (1 << k)) {
+          fam.count[k]++;
+          fam.hit[k] = Math.max(fam.hit[k], this.famTracker.onsetStrength[k]);
+        }
+      }
+      if (this.famTracker.melody >= 0) fam.melody += (this.famTracker.melody - fam.melody) * expCoef(dt, 0.12);
+      fam.hue = this.famTracker.hue;
+      fam.hueStrength = this.famTracker.hueStrength;
+    }
+    // kick onsets come from the confirmed low-hit detector (it rejects bass-note attacks)
+    if (this.f.kickCount !== this.lastKickCountForFam) {
+      if (this.f.kickCount > this.lastKickCountForFam) {
+        fam.count[FAM.kick]++;
+        fam.hit[FAM.kick] = Math.max(fam.hit[FAM.kick], this.f.kick);
+      }
+      this.lastKickCountForFam = this.f.kickCount;
+    }
+    for (let k = 0; k < NF; k++) fam.level[k] = this.famEnv[k].step(silent ? 0 : raw[k], dt);
   }
 
   private bandDb(db: Float32Array, lo: number, hi: number) {
@@ -461,6 +544,7 @@ export class FeatureExtractor {
       // energy-jump drop for songs without a clear breakdown: a fast rise relative to the last few seconds
       if (!silent && f.kick > 0.3 && f.intensity - med > 0.2 && t - this.lastDropT > 10 && this.elapsed > 8) this.triggerDrop(t, 0.7);
     }
+    this.families(freqDb, t, dt, silent, jumped);
     this.lastT = t;
 
     f.section = silent
