@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
-import { AHEAD, BEHIND, RINGS, TunnelClock, createRingParams } from './tunnelState';
+import { AHEAD, BEHIND, FAM_ROWS, FamilyRows, RINGS, ROWS_PER_BEAT, TunnelClock, createRingParams } from './tunnelState';
+import { FAMILY_INFO } from '../../audio/soundFamilies';
 export { DEFAULT_TUNNEL } from './tunnelState';
 export type { TunnelParams } from './tunnelState';
 import { tunnelFragment, tunnelVertex } from './tunnelShaders';
@@ -13,7 +14,6 @@ import { Envelope, expCoef } from '../../audio/dsp';
 import type { Drives } from '../../mapping/drives';
 import { debugEnabled, registerExtras, registerSim, registerStepper } from '../../engine/debug';
 
-const ROWS_PER_BEAT = 8;
 
 /**
  * World E. One procedural tube; the camera rides the beat clock, so it crosses a ring on every
@@ -49,12 +49,19 @@ export function Tunnel() {
   }, [segs]);
 
   const rings = useMemo(() => createRingParams(), []);
+  const famRows = useMemo(() => new FamilyRows(), []);
+  const famTex = useMemo(() => {
+    const t = new THREE.DataTexture(famRows.data, FAM_ROWS, 2, THREE.RGBAFormat, THREE.FloatType);
+    t.minFilter = t.magFilter = THREE.NearestFilter;
+    t.needsUpdate = true;
+    return t;
+  }, [famRows]);
   const mat = useMemo(
     () =>
       new THREE.ShaderMaterial({
         vertexShader: tunnelVertex,
         fragmentShader: tunnelFragment,
-        defines: { RINGS, ROWS_PER_BEAT },
+        defines: { RINGS, ROWS_PER_BEAT, FAM_ROWS },
         side: THREE.DoubleSide,
         uniforms: {
           uPos: { value: 0 }, uBase: { value: 0 },
@@ -63,12 +70,13 @@ export function Tunnel() {
           uSpacing: { value: 9 }, uRadius: { value: 7 }, uTwist: { value: 0 }, uTwistPhase: { value: 0 },
           uBass: { value: 0 }, uMid: { value: 0 }, uHigh: { value: 0 }, uTime: { value: 0 }, uCurveAmp: { value: 1 },
           uFlash: { value: 0 }, uEnergy: { value: 0 }, uRelease: { value: 0 },
+          uFamTex: { value: famTex }, uFam: { value: FAMILY_INFO.map((f) => new THREE.Color(f.color)) }, uFamDepth: { value: 1 }, uFamGlow: { value: 1 },
           uDeep: { value: new THREE.Color() }, uLine: { value: new THREE.Color() }, uBright: { value: new THREE.Color() }, uAccent: { value: new THREE.Color() },
         },
       }),
-    [rings],
+    [rings, famTex],
   );
-  useEffect(() => () => { geo.dispose(); mat.dispose(); }, [geo, mat]);
+  useEffect(() => () => { geo.dispose(); mat.dispose(); famTex.dispose(); }, [geo, mat, famTex]);
 
   useEffect(() => {
     const pal = paletteVec3(paletteId);
@@ -131,6 +139,8 @@ export function Tunnel() {
       S.twistPhase += dt * tp.twist * 0.8 * d.flow;
     }
     clock.rings(lastDrives.current ?? d, rings);
+    famRows.fill(clock, lastDrives.current ?? d);
+    famTex.needsUpdate = true;
     perf.worldValue = `${clock.mode === 'map' ? 'Song map' : clock.mode === 'live' ? 'Live' : 'Drifting'}, ring ${Math.floor(clock.pos)}`;
 
     if (d.kickEvents !== S.lastKick) {

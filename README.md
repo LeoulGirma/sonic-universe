@@ -109,6 +109,8 @@ One procedural tube (64–192 segments around, 8 rows per beat), positioned enti
 - **No swimming:** rows sit on a grid anchored to whole beats, so passing a beat shifts the grid by exactly one beat of rows. The path's tangent at the camera is removed, so you are always centred and curves show ahead.
 - **Camera:** this world owns it. Arrow keys / WASD steer within the tunnel, the pointer looks around, and cinematic mode sways gently.
 
+**Sounds own the walls.** Around the tube each sound family holds a band of wall, from the floor counter-clockwise: bass (floor), kick, pads, melody (ceiling), hats, hits. A band's width grows faster than its loudness, so a loud sound crowds the quiet ones out, and it pushes into the tunnel by its loudness, each with its own shape: the bass a smooth rising floor, pads broad walls (tinted by the harmony), hits jagged teeth, hats a twinkling studded strip, the kick a solid red slab, and the melody a bright line along the ceiling that follows its pitch. Levels come per row, one row per 32nd note, through a float texture; with a song map each row reads the song at its own time, so a snare is a ridge that reaches you exactly as it sounds and the walls ahead show what is about to play. Live, rows record what was playing as you pass them and the tunnel ahead shows the current mix. Checked on F1 at 0:22 (violet bass floor and orange hits, little else), 1:04 and 1:44 (all six bands, teal pad walls widest) and 2:30 (the bass floor takes over, no hats).
+
 ## World B: Liquid Dimension
 
 A convincing GPU approximation, not fluid dynamics (as the brief allows). Two layers:

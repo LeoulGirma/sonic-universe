@@ -1,5 +1,6 @@
 import type { Drives } from '../../mapping/drives';
 import { anticipationAt } from '../../audio/songMap';
+import { F, NF, famFrame } from '../../audio/soundFamilies';
 
 /**
  * The Impossible Tunnel — clock and structure (pure TypeScript, tested).
@@ -27,6 +28,8 @@ export const BEHIND = 2; // beats of tunnel kept behind the camera
 export const AHEAD = 40; // beats of tunnel ahead
 export const RINGS = BEHIND + AHEAD + 2; // per-ring uniform slots
 export const STYLES = [6, 0, 4, 8, 3, 5]; // polygon sides per style (0 = circle)
+export const ROWS_PER_BEAT = 8; // vertex rows per beat (a row is a 32nd note)
+export const FAM_ROWS = (BEHIND + AHEAD) * ROWS_PER_BEAT + 2; // texture width
 
 export interface RingParams {
   wide: Float32Array; // 0..1 breakdown chamber
@@ -48,7 +51,7 @@ export class TunnelClock {
   /** continuous position in beats */
   pos = 0;
   /** whole-beat offset accumulated while idle (keeps crossings on the beat once music starts) */
-  private drift = 0;
+  drift = 0;
   private wasIdle = true;
   private liveStyle = 0;
   private lastDrop = 0;
@@ -152,6 +155,76 @@ function smooth(a: Float32Array, passes: number) {
       const cur = a[i];
       a[i] = 0.25 * prev + 0.5 * cur + 0.25 * a[i + 1];
       prev = cur;
+    }
+  }
+}
+
+/**
+ * Sound families painted onto the tunnel, one row per 32nd note. Texture layout (RGBA float,
+ * FAM_ROWS × 2): row r of texel line 0 = kick, hits, hats, bass; line 1 = pads, lead, melody, hue.
+ *
+ * With a song map every row knows the music at ITS OWN time, so a snare is a ridge in the wall
+ * that reaches you exactly as it sounds, and the walls ahead show what the song is about to play.
+ * Percussive families take the peak within the row (a 16th-note hat is one row), the others the
+ * mean. Live, rows record what was playing as you pass them; the tunnel ahead shows the current mix.
+ */
+export class FamilyRows {
+  readonly data = new Float32Array(FAM_ROWS * 2 * 4);
+  private hist = new Map<number, Float32Array>(); // live: absolute row → 8 values
+  private melody = 0.3;
+
+  fill(clock: TunnelClock, d: Drives) {
+    const base = clock.base();
+    const map = d.map;
+    const tr = map?.families;
+    const out = this.data;
+    const W = FAM_ROWS * 4;
+    if (clock.mode === 'map' && map && tr && map.beats.length > 1) {
+      const beats = map.beats;
+      const n = beats.length;
+      const period = beats[1] - beats[0];
+      const timeOf = (bi: number) => {
+        if (bi < 0) return beats[0] + bi * period;
+        if (bi >= n - 1) return beats[n - 1] + (bi - (n - 1)) * period;
+        const i = Math.floor(bi);
+        return beats[i] + (beats[i + 1] - beats[i]) * (bi - i);
+      };
+      for (let r = 0; r < FAM_ROWS; r++) {
+        const bi = base + r / ROWS_PER_BEAT - clock.drift;
+        const t0 = timeOf(bi), t1 = timeOf(bi + 1 / ROWS_PER_BEAT);
+        const i0 = famFrame(tr, t0), i1 = Math.max(i0 + 1, famFrame(tr, t1));
+        for (let f = 0; f < NF; f++) {
+          const L = tr.level[f];
+          let v = 0;
+          if (f <= F.hats) for (let i = i0; i < i1; i++) v = Math.max(v, L[i]);
+          else { for (let i = i0; i < i1; i++) v += L[i]; v /= i1 - i0; }
+          out[f < 4 ? r * 4 + f : W + r * 4 + (f - 4)] = t0 > map.duration ? 0 : v;
+        }
+        const m = tr.melody[i0];
+        if (m >= 0) this.melody = m;
+        out[W + r * 4 + 2] = this.melody;
+        out[W + r * 4 + 3] = tr.hue[i0];
+      }
+      return;
+    }
+    // live: record the row under the camera; everything ahead mirrors what is playing now
+    const fam = d.fam;
+    const camRow = Math.floor(clock.pos * ROWS_PER_BEAT);
+    let rec = this.hist.get(camRow);
+    if (!rec) { rec = new Float32Array(8); this.hist.set(camRow, rec); }
+    for (let f = 0; f < NF; f++) rec[f] = f <= F.hats ? Math.max(rec[f], fam.level[f]) : fam.level[f];
+    rec[6] = fam.melody;
+    rec[7] = fam.hue;
+    for (const k of this.hist.keys()) if (k < base * ROWS_PER_BEAT - 4) this.hist.delete(k);
+    for (let r = 0; r < FAM_ROWS; r++) {
+      const abs = base * ROWS_PER_BEAT + r;
+      const h = abs <= camRow ? this.hist.get(abs) : undefined;
+      for (let f = 0; f < NF; f++) {
+        const v = h ? h[f] : abs <= camRow ? 0 : fam.level[f];
+        out[f < 4 ? r * 4 + f : W + r * 4 + (f - 4)] = v;
+      }
+      out[W + r * 4 + 2] = h ? h[6] : fam.melody;
+      out[W + r * 4 + 3] = h ? h[7] : fam.hue;
     }
   }
 }
