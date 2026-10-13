@@ -1,6 +1,7 @@
 import { FeatureExtractor } from './FeatureExtractor';
 import { fftMagDb } from './fft';
 import { FamilyCollector, type FamilyTrack } from './soundFamilies';
+import { SpecCollector, type SpecTrack } from './spectrum';
 
 /**
  * A whole-song analysis built ahead of time for files (not the microphone).
@@ -22,6 +23,8 @@ export interface SongMap {
   levels: { bass: [number, number]; mid: [number, number]; high: [number, number]; loud: [number, number] };
   /** sound families over the whole song (centred, look-ahead separation) */
   families: FamilyTrack | null;
+  /** 32-band spectrogram at 30 fps, normalised per band (for visuals that draw the music's shape) */
+  spectrum: SpecTrack | null;
 }
 
 export interface MapHit {
@@ -156,6 +159,7 @@ export function buildSongMap(pcm: Float32Array, sr: number, onProgress?: (p: num
   const loudDb = new Float32Array(nFrames);
   const inten = new Float32Array(nFrames);
   const fam = new FamilyCollector(fps, N / sr);
+  const spec = new SpecCollector(fps / 2, N / sr);
   for (let i = 0; i < nFrames; i++) {
     const t = N / sr + i * dt;
     const end = Math.floor(t * sr);
@@ -168,6 +172,7 @@ export function buildSongMap(pcm: Float32Array, sr: number, onProgress?: (p: num
     loudDb[i] = f.loudnessDb;
     inten[i] = f.intensity;
     fam.push(freq, sr / N, f.loudnessDb);
+    if (i % 2 === 0) spec.push(freq, sr / N, f.loudnessDb);
     if (onProgress && i % 1500 === 0) onProgress(0.8 * (i / nFrames));
   }
   const tOf = (i: number) => N / sr + i * dt;
@@ -289,9 +294,10 @@ export function buildSongMap(pcm: Float32Array, sr: number, onProgress?: (p: num
   anticipation.sort((x, y) => x[1] - y[1]);
   onProgress?.(0.85);
   const families = nFrames > 0 ? fam.build(SILENCE_DB) : null;
+  const spectrum = nFrames > 0 ? spec.build(SILENCE_DB) : null;
   onProgress?.(1);
 
-  return { duration, bpm, beats, beatConfidence, breakdowns, drops, anticipation, levels, families };
+  return { duration, bpm, beats, beatConfidence, breakdowns, drops, anticipation, levels, families, spectrum };
 }
 
 /** Index of the last beat at or before t (-1 if before the first). */

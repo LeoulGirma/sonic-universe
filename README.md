@@ -113,9 +113,14 @@ One procedural tube (64–192 segments around, 8 rows per beat), positioned enti
 
 ## World F: Sound Valley
 
-Built after the tunnel proved tiring to watch (tight space, zoom pumping, full-screen colour). You travel forward through the song over a wide night valley with a horizon; each sound family builds its own part of the landscape: the **bass** raises hills (mostly on the slopes, so the path stays open) under Unknown-Pleasures-style ridgelines, one per beat; each **kick** sends a soft ring across the ground; **pads** hang aurora curtains in the sky, taller when louder and tinted by the chord; the **melody** is a glowing path ahead, below eye level, that rises and falls with the tune; **hits** raise light monoliths along the sides on their onsets, taller for louder hits; **hats** make the air glint, more of it when louder. With a song map the land ahead is built from what the song is about to play (16th-note rows, 72 beats ahead), anchored to absolute beats so nothing swims.
+Built after the tunnel proved tiring to watch (tight space, zoom pumping, full-screen colour), then reworked so it moves with the groove rather than scrolling past it.
 
-Comfort rules: about a quarter of the tunnel's speed (2.4 units per beat), a fixed field of view, no camera roll, light on darkness, no full-screen flashes or streaks. The tunnel also lost its zoom pumping and roll, and its walls push in less.
+- **The ground is the music.** Every 16th note is one ridgeline whose profile is the song's spectrum at that moment (32 bands, 40 Hz – 10 kHz, from a 30 fps spectrogram stored in the song map), mirrored either side of the route: bass beside it, highs far out, coloured violet → teal → gold across the valley. A groove draws its own repeating pattern across the land.
+- **A visible present.** With a song map, the music's present is a now line a few beats ahead of the camera (from the camera itself the present would be underfoot and out of view). Ridges flare, hit monoliths flash and the melody orb moves exactly as each sound plays; beyond the line lies what is about to play, behind it what just did, dimmed. Live, the now line sits near the horizon and the land is built there and flows toward you.
+- **Each family:** kicks roll a real wave across the ground from the now line; hits raise light monoliths on their onsets; hats make the air glint; pads hang aurora curtains, taller when louder and tinted by the chord; the melody is an orb riding the now line at its pitch, leaving its contour behind as a path.
+- **Exploration:** the route winds (stable, anchored to beats) and the camera follows it, looking toward the now line, rising gently with the song's energy.
+
+Comfort rules: slow travel (2.4 units per beat), fixed field of view, no camera roll, ridges near the route kept below eye level, light on darkness, no full-screen flashes. Checked on a 125 BPM Afrobeats track (LARK x Nahibeatz x Yonta) and F1.
 
 ## World B: Liquid Dimension
 

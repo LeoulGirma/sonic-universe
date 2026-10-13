@@ -47,6 +47,16 @@ export const createRingParams = (): RingParams => ({
   curve: new Float32Array(RINGS),
 });
 
+/** time (s) of fractional map beat `bi`, extrapolating past either end of the grid */
+export function beatTime(beats: Float64Array, bi: number) {
+  const n = beats.length;
+  const period = beats[1] - beats[0];
+  if (bi < 0) return beats[0] + bi * period;
+  if (bi >= n - 1) return beats[n - 1] + (bi - (n - 1)) * period;
+  const i = Math.floor(bi);
+  return beats[i] + (beats[i + 1] - beats[i]) * (bi - i);
+}
+
 export class TunnelClock {
   /** continuous position in beats */
   pos = 0;
@@ -174,7 +184,8 @@ export class FamilyRows {
   private melody = 0.3;
 
   /** @param rpb rows per beat  @param nRows rows in the window (texture width) */
-  constructor(readonly rpb = ROWS_PER_BEAT, readonly nRows = FAM_ROWS) {
+  /** @param aheadEmpty live: leave rows after "now" empty instead of mirroring the current mix */
+  constructor(readonly rpb = ROWS_PER_BEAT, readonly nRows = FAM_ROWS, readonly aheadEmpty = false) {
     this.data = new Float32Array(nRows * 2 * 4);
   }
 
@@ -227,7 +238,7 @@ export class FamilyRows {
       const abs = base * ROWS_PER_BEAT + r;
       const h = abs <= camRow ? this.hist.get(abs) : undefined;
       for (let f = 0; f < NF; f++) {
-        const v = h ? h[f] : abs <= camRow ? 0 : fam.level[f];
+        const v = h ? h[f] : abs <= camRow || this.aheadEmpty ? 0 : fam.level[f];
         out[f < 4 ? r * 4 + f : W + r * 4 + (f - 4)] = v;
       }
       out[W + r * 4 + 2] = h ? h[6] : fam.melody;

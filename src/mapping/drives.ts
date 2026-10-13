@@ -53,12 +53,14 @@ export interface Drives {
   songTime: number; // playback time in seconds
   map: SongMap | null; // whole-song structure (beats, breakdowns, drops, build-ups) when available
   fam: FamilyDrives;
+  spec: Float32Array; // 32-band spectrum 0..1 (see MusicFeatures.spec)
 }
 
 export const createDrives = (): Drives => ({
   time: 0, idle: 1, gravity: 0, pulse: 0, shimmer: 0, sparkle: 0, flow: 0, energy: 0, calm: 0, tension: 0,
   release: 0, hue: 0.4, beatPhase: 0, bpm: 0, confidence: 0, kickEvents: 0, hatEvents: 0, dropEvents: 0, beatEvents: 0, lastKick: 0,
   track: 0, centroidHz: 1000, tilt: 0, activeTime: 0, beatIndex: -1, songTime: 0, map: null,
+  spec: new Float32Array(32),
   fam: { level: new Array(NF).fill(0), hit: new Array(NF).fill(0), events: new Array(NF).fill(0), melody: 0.3, hue: 0, hueStrength: 0 },
 });
 
@@ -118,6 +120,7 @@ export class DriveMapper {
       this.lf[k] = ff.count[k];
     }
     df.melody = ff.melody;
+    d.spec = f.spec;
     df.hue = ff.hue;
     df.hueStrength = ff.hueStrength * live;
     return d;

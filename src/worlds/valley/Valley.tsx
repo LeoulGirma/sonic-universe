@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
-import { FamilyRows, TunnelClock } from '../tunnel/tunnelState';
+import { FamilyRows, TunnelClock, beatTime } from '../tunnel/tunnelState';
 import { F, FAMILY_INFO } from '../../audio/soundFamilies';
+import { SPEC_BANDS, specFrame } from '../../audio/spectrum';
 import { useStore } from '../../store/useStore';
 import { cameraOwner, drives, perf, pointer } from '../../engine/frameBus';
-import { expCoef } from '../../audio/dsp';
+import { Envelope, expCoef } from '../../audio/dsp';
 import type { Drives } from '../../mapping/drives';
 import { debugEnabled, registerExtras, registerSim, registerStepper } from '../../engine/debug';
 import {
@@ -14,60 +15,103 @@ import {
 } from './valleyShaders';
 
 /**
- * World F — Sound Valley. You travel forward through the song over a wide night valley; each
- * kind of sound builds its own part of the landscape, in the legend colours:
- *   bass  → the ground: ridgelines (one per beat) over hills that the bass raises
- *   kick  → a soft ring spreading across the ground
- *   pads  → aurora curtains in the sky, taller when the pads are louder, tinted by the chord
- *   lead  → a glowing path ahead that rises and falls with the melody
- *   hits  → light monoliths along the sides, taller for louder hits
- *   hats  → dust in the air that glints with the hats
- * With a song map the landscape AHEAD is built from what the song is about to play.
+ * World F — Sound Valley. You travel through the song over a wide night valley whose ground IS
+ * the music: every 16th note is a ridgeline shaped like the spectrum at that moment (bass by the
+ * path, highs far out). The music's present is a NOW LINE a few beats ahead of you: ridges flare,
+ * hit monoliths flash and the melody orb bounces exactly as each sound plays, with the song still
+ * to come laid out beyond. Kicks roll a wave across the ground; pads hang aurora in the sky; the
+ * melody leaves a glowing path; hats glint in the air. The route winds, and the camera follows it.
  *
- * Built for comfort after the tunnel gave headaches: wide open space with a horizon, slow travel
- * (2.4 units per beat), a fixed field of view, no camera roll, light on darkness, no full-screen
- * flashes or streaks.
+ * Built for comfort (the tunnel gave headaches): open space with a horizon, slow travel, a fixed
+ * field of view, no roll, light on darkness, no full-screen flashes.
  */
 const RPB = 4; // rows per beat (16th notes)
-const BEHIND_B = 6;
-const AHEAD_B = 72;
+const BEHIND_B = 2; // rows kept behind the camera
+const AHEAD_B = 74; // visible ahead of the camera
 const NROWS = (BEHIND_B + AHEAD_B) * RPB + 2;
 const SPACING = 2.4;
-const X_SEG = 170;
+const X_SEG = 180;
 const CURTAINS = 6;
-const CURTAIN_EVERY = 16; // beats
-const DUST_PER_ROW = 8;
+const CURTAIN_EVERY = 16;
+const DUST_PER_ROW = 6;
+const NOW_MAP = 5.5; // beats between the camera and the now line, with a song map
+const NOW_LIVE = 50; // live: the land is made near the horizon and flows toward you
 
 const COL = FAMILY_INFO.map((f) => new THREE.Color(f.color));
 const additive = { transparent: true, depthWrite: false, blending: THREE.AdditiveBlending } as const;
+const pathX = (b: number) => 9 * Math.sin(b * 0.045) + 4 * Math.sin(b * 0.017 + 1);
+const melodyY = (m: number) => 0.6 + 5.2 * Math.min(1, Math.max(0, (m - 0.12) / 0.45));
+
+/** spectrum per row: from the song map at each row's own time, or recorded live at the now line */
+class SpecRows {
+  readonly data = new Float32Array(NROWS * SPEC_BANDS);
+  private hist = new Map<number, Float32Array>();
+  fill(clock: TunnelClock, d: Drives, base: number) {
+    const out = this.data;
+    const map = d.map;
+    const sp = map?.spectrum;
+    if (clock.mode === 'map' && map && sp && map.beats.length > 1) {
+      for (let r = 0; r < NROWS; r++) {
+        const bi = base + r / RPB - clock.drift;
+        const t0 = beatTime(map.beats, bi), t1 = beatTime(map.beats, bi + 1 / RPB);
+        const j0 = specFrame(sp, t0), j1 = Math.max(j0 + 1, specFrame(sp, t1));
+        const off = t0 > map.duration ? 0 : 1;
+        for (let k = 0; k < SPEC_BANDS; k++) {
+          let v = 0;
+          for (let j = j0; j < j1; j++) v = Math.max(v, sp.data[j * SPEC_BANDS + k]);
+          out[k * NROWS + r] = (off * v) / 255;
+        }
+      }
+      return;
+    }
+    const nowRow = Math.floor(clock.pos * RPB);
+    let rec = this.hist.get(nowRow);
+    if (!rec) { rec = new Float32Array(SPEC_BANDS); this.hist.set(nowRow, rec); }
+    for (let k = 0; k < SPEC_BANDS; k++) rec[k] = Math.max(rec[k], d.spec[k]);
+    for (const key of this.hist.keys()) if (key < base * RPB - 4) this.hist.delete(key);
+    for (let r = 0; r < NROWS; r++) {
+      const h = this.hist.get(base * RPB + r);
+      for (let k = 0; k < SPEC_BANDS; k++) out[k * NROWS + r] = h ? h[k] : 0;
+    }
+  }
+}
 
 export function Valley() {
   const { camera, size } = useThree();
   const cam = camera as THREE.PerspectiveCamera;
 
-  const rows = useMemo(() => new FamilyRows(RPB, NROWS), []);
+  const rows = useMemo(() => new FamilyRows(RPB, NROWS, true), []);
+  const spec = useMemo(() => new SpecRows(), []);
   const tex = useMemo(() => {
     const t = new THREE.DataTexture(rows.data, NROWS, 2, THREE.RGBAFormat, THREE.FloatType);
     t.minFilter = t.magFilter = THREE.NearestFilter;
     t.needsUpdate = true;
     return t;
   }, [rows]);
+  const specTex = useMemo(() => {
+    const t = new THREE.DataTexture(spec.data, NROWS, SPEC_BANDS, THREE.RedFormat, THREE.FloatType);
+    t.minFilter = t.magFilter = THREE.NearestFilter;
+    t.needsUpdate = true;
+    return t;
+  }, [spec]);
   const clock = useMemo(() => new TunnelClock(), []);
   const lastDrives = useRef<Drives | null>(null);
 
   const scene = useMemo(() => {
     const defines = { RPB, NROWS };
-    const common = () => ({ uFamTex: { value: tex }, uPos: { value: 0 }, uBase: { value: 0 }, uSpacing: { value: SPACING }, uTime: { value: 0 } });
+    const common = () => ({
+      uFamTex: { value: tex }, uSpecTex: { value: specTex }, uPos: { value: 0 }, uCam: { value: 0 }, uBase: { value: 0 },
+      uSpacing: { value: SPACING }, uTime: { value: 0 },
+    });
     const horizon = new THREE.Color('#120d2a');
+    const vRows = (BEHIND_B + AHEAD_B) * RPB + 1;
 
     // ground
-    const vRows = (BEHIND_B + AHEAD_B) * RPB + 1;
     const gk = new Float32Array((X_SEG + 1) * vRows * 2);
     for (let r = 0; r < vRows; r++) for (let c = 0; c <= X_SEG; c++) {
       const i = r * (X_SEG + 1) + c;
-      // denser columns near the middle, where you look most
       const u = (c / X_SEG) * 2 - 1;
-      gk[i * 2] = Math.sign(u) * Math.pow(Math.abs(u), 1.35);
+      gk[i * 2] = Math.sign(u) * Math.pow(Math.abs(u), 1.3); // denser near the path
       gk[i * 2 + 1] = r;
     }
     const gIdx: number[] = [];
@@ -76,19 +120,21 @@ export function Valley() {
       gIdx.push(a, b, d, b, e, d);
     }
     const gGeo = new THREE.BufferGeometry();
-    gGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(gk.length / 2 * 3), 3));
+    gGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array((gk.length / 2) * 3), 3));
     gGeo.setAttribute('gk', new THREE.BufferAttribute(gk, 2));
     gGeo.setIndex(gIdx);
     const ground = new THREE.Mesh(gGeo, new THREE.ShaderMaterial({
       vertexShader: groundVertex, fragmentShader: groundFragment, defines, side: THREE.DoubleSide,
-      uniforms: { ...common(), uBassCol: { value: COL[F.bass] }, uKickCol: { value: COL[F.kick] }, uHorizon: { value: horizon }, uKickAge: { value: 9 }, uKickStr: { value: 0 } },
+      uniforms: {
+        ...common(), uBassCol: { value: COL[F.bass] }, uPadsCol: { value: COL[F.pads] }, uHatsCol: { value: COL[F.hats] },
+        uKickCol: { value: COL[F.kick] }, uHorizon: { value: horizon }, uKickAge: { value: 9 }, uKickStr: { value: 0 }, uNowZ: { value: 0 },
+      },
     }));
     ground.frustumCulled = false;
 
-    // sky
     const sky = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
       vertexShader: skyVertex, fragmentShader: skyFragment, depthWrite: false,
-      uniforms: { uHorizon: { value: horizon }, uTop: { value: new THREE.Color('#010104') }, uGlow: { value: 0 }, uRes: { value: new THREE.Vector2() } },
+      uniforms: { uHorizon: { value: horizon }, uTop: { value: new THREE.Color('#010104') }, uGlow: { value: 0 } },
     }));
     sky.frustumCulled = false;
     sky.renderOrder = -10;
@@ -96,7 +142,6 @@ export function Valley() {
     // aurora curtains
     const aGeo = new THREE.BufferGeometry();
     {
-      // a few rows up the curtain so the vertical shape is smooth
       const nx = 140, ny = 8, ak: number[] = [], idx: number[] = [];
       for (let j = 0; j <= ny; j++) for (let i = 0; i <= nx; i++) ak.push((i / nx) * 2 - 1, j / ny);
       for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
@@ -116,9 +161,9 @@ export function Valley() {
       return m;
     });
 
-    // melody path
-    const pk = new Float32Array(vRows * 2 * 2);
-    for (let r = 0; r < vRows; r++) { pk.set([-1, r, 1, r], r * 4); }
+    // melody path + the orb that rides the now line
+    const pk = new Float32Array(vRows * 4);
+    for (let r = 0; r < vRows; r++) pk.set([-1, r, 1, r], r * 4);
     const pIdx: number[] = [];
     for (let r = 0; r < vRows - 1; r++) pIdx.push(2 * r, 2 * r + 1, 2 * r + 2, 2 * r + 1, 2 * r + 3, 2 * r + 2);
     const pGeo = new THREE.BufferGeometry();
@@ -130,13 +175,16 @@ export function Valley() {
       uniforms: { ...common(), uLeadCol: { value: COL[F.lead] } },
     }));
     path.frustumCulled = false;
+    const orb = new THREE.Mesh(new THREE.SphereGeometry(0.32, 20, 14), new THREE.MeshBasicMaterial({ color: COL[F.lead].clone(), ...additive }));
+    const halo = new THREE.Mesh(new THREE.SphereGeometry(0.75, 20, 14), new THREE.MeshBasicMaterial({ color: COL[F.lead].clone(), opacity: 0.25, ...additive }));
+    orb.add(halo);
 
     // monoliths
     const box = new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0);
     const mGeo = new THREE.InstancedBufferGeometry();
     mGeo.index = box.index;
     mGeo.setAttribute('position', box.getAttribute('position'));
-    const inst = new Float32Array(vRows * 2 * 2);
+    const inst = new Float32Array(vRows * 4);
     for (let r = 0; r < vRows; r++) inst.set([r, -1, r, 1], r * 4);
     mGeo.setAttribute('inst', new THREE.InstancedBufferAttribute(inst, 2));
     mGeo.instanceCount = vRows * 2;
@@ -159,10 +207,10 @@ export function Valley() {
     dust.frustumCulled = false;
 
     const group = new THREE.Group();
-    group.add(sky, ground, ...curtains, monos, path, dust);
+    group.add(sky, ground, ...curtains, monos, path, dust, orb);
     const mats = [ground, ...curtains, path, monos, dust].map((m) => m.material as THREE.ShaderMaterial);
-    return { group, ground, sky, curtains, path, monos, dust, mats, vertsTotal: gk.length / 2 };
-  }, [tex]);
+    return { group, ground, sky, curtains, path, orb, halo, monos, dust, mats, vertsTotal: gk.length / 2 };
+  }, [tex, specTex]);
 
   useEffect(() => () => {
     scene.group.traverse((o) => {
@@ -171,9 +219,13 @@ export function Valley() {
       (m.material as THREE.Material | undefined)?.dispose();
     });
     tex.dispose();
-  }, [scene, tex]);
+    specTex.dispose();
+  }, [scene, tex, specTex]);
 
-  const s = useRef({ t: 0, look: new THREE.Vector2(), kickAge: 9, kickStr: 0, lastKick: 0, fov: 62 });
+  const s = useRef({
+    t: 0, look: new THREE.Vector3(0, 2, -40), camX: 0, kickAge: 9, kickStr: 0, lastKick: -1, nowB: NOW_MAP, orbY: 2,
+    lift: new Envelope(2.5, 4), leadHit: 0,
+  });
 
   useEffect(() => {
     cameraOwner.world = true;
@@ -194,7 +246,8 @@ export function Valley() {
     };
   }, [scene, clock]);
 
-  useFrame((_, dt) => {
+  useFrame((_, dtRaw) => {
+    const dt = Math.min(dtRaw, 0.1);
     const d = drives();
     const st = useStore.getState();
     const S = s.current;
@@ -204,12 +257,17 @@ export function Valley() {
     }
     S.t += dt;
     const dd = lastDrives.current ?? d;
-    const base = Math.floor(clock.pos) - BEHIND_B;
+    // with a song map the now line sits just ahead; live it sits near the horizon
+    S.nowB += ((clock.mode === 'map' ? NOW_MAP : NOW_LIVE) - S.nowB) * expCoef(dt, 1.5);
+    const camB = clock.pos - S.nowB;
+    const base = Math.floor(camB) - BEHIND_B;
     rows.fill(clock, dd, base);
+    spec.fill(clock, dd, base);
     tex.needsUpdate = true;
+    specTex.needsUpdate = true;
     perf.worldValue = `${clock.mode === 'map' ? 'Song map' : clock.mode === 'live' ? 'Live' : 'Drifting'}, beat ${Math.floor(clock.pos)}`;
 
-    // kick ring
+    if (S.lastKick < 0) S.lastKick = d.fam.events[F.kick];
     if (d.fam.events[F.kick] !== S.lastKick) {
       S.lastKick = d.fam.events[F.kick];
       S.kickAge = 0;
@@ -220,15 +278,16 @@ export function Valley() {
     for (const m of scene.mats) {
       const u = m.uniforms;
       u.uPos.value = clock.pos;
+      u.uCam.value = camB;
       u.uBase.value = base;
       u.uTime.value = S.t;
     }
     const gu = (scene.ground.material as THREE.ShaderMaterial).uniforms;
     gu.uKickAge.value = S.kickAge;
     gu.uKickStr.value = S.kickStr;
-    (scene.sky.material as THREE.ShaderMaterial).uniforms.uGlow.value = 0.35 * d.energy + 0.25 * d.fam.level[F.pads];
-    // curtains on absolute beats, every CURTAIN_EVERY beats, recycled as you pass them
-    const first = Math.ceil((clock.pos - 6) / CURTAIN_EVERY) * CURTAIN_EVERY;
+    gu.uNowZ.value = -S.nowB * SPACING;
+    (scene.sky.material as THREE.ShaderMaterial).uniforms.uGlow.value = 0.3 * d.energy + 0.25 * d.fam.level[F.pads];
+    const first = Math.ceil((camB - 2) / CURTAIN_EVERY) * CURTAIN_EVERY;
     scene.curtains.forEach((c, i) => {
       const cb = first + i * CURTAIN_EVERY;
       const u = (c.material as THREE.ShaderMaterial).uniforms;
@@ -236,14 +295,30 @@ export function Valley() {
       u.uSeed.value = ((cb / CURTAIN_EVERY) * 0.618) % 1;
     });
 
-    // camera: fixed height and field of view, no roll; a slow drift, and the pointer looks around
-    const lookT = pointer.over && !st.cinematic ? pointer.ndc : new THREE.Vector2(Math.sin(S.t * 0.05) * 0.12, Math.sin(S.t * 0.04) * 0.05);
-    S.look.lerp(lookT, expCoef(dt, 0.6));
-    const sway = Math.sin(S.t * 0.045) * 2.2;
-    cam.position.set(sway, 7.2 + Math.sin(S.t * 0.06) * 0.4, 0);
+    // the melody orb rides the now line at the melody's pitch, flaring on each new note
+    const lead = d.fam.level[F.lead];
+    S.leadHit = Math.max(S.leadHit * Math.exp(-dt / 0.18), d.fam.hit[F.lead]);
+    S.orbY += (melodyY(d.fam.melody) + 0.15 - S.orbY) * expCoef(dt, 0.06);
+    scene.orb.position.set(pathX(clock.pos), S.orbY, -S.nowB * SPACING);
+    scene.orb.scale.setScalar(0.5 + 1.1 * lead + 0.9 * S.leadHit);
+    (scene.orb.material as THREE.MeshBasicMaterial).opacity = Math.min(1, 0.15 + 1.2 * lead);
+    (scene.halo.material as THREE.MeshBasicMaterial).opacity = 0.08 + 0.3 * lead + 0.3 * S.leadHit;
+
+    // camera: follows the winding route, looks along it toward the now line and beyond;
+    // fixed field of view, no roll, height rising gently with the song's energy
+    const lift = S.lift.step(d.energy, dt);
+    S.camX += (pathX(camB) - S.camX) * expCoef(dt, 0.8);
+    const ahead = camB + S.nowB + 10;
+    const tgt = new THREE.Vector3(
+      pathX(ahead) * 0.8 + S.camX * 0.2 + (pointer.over && !st.cinematic ? pointer.ndc.x * 30 : 0),
+      1.5 + (pointer.over && !st.cinematic ? pointer.ndc.y * 14 : 0),
+      -(S.nowB + 10) * SPACING,
+    );
+    S.look.lerp(tgt, expCoef(dt, 0.7));
+    cam.position.set(S.camX, 6.2 + 2.2 * lift, 0);
     cam.up.set(0, 1, 0);
-    cam.lookAt(sway * 0.6 + S.look.x * 40, 3 + S.look.y * 18, -70);
-    const fov = size.width < size.height ? 74 : 62;
+    cam.lookAt(S.look);
+    const fov = size.width < size.height ? 76 : 64;
     if (Math.abs(cam.fov - fov) > 0.01) {
       cam.fov = fov;
       cam.updateProjectionMatrix();

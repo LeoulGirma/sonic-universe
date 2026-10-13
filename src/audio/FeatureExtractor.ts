@@ -3,6 +3,7 @@ import { BeatTracker } from './BeatTracker';
 import type { MapHit, SongMap } from './songMap';
 import { anticipationAt, beatIndexAt } from './songMap';
 import { F as FAM, FamilyTracker, NF, famFrame } from './soundFamilies';
+import { SPEC_BANDS, SpecLive, specFrame } from './spectrum';
 
 /** Which kinds of sound are playing (see soundFamilies.ts). Index with F.kick … F.lead. */
 export interface FamilyFeatures {
@@ -67,6 +68,7 @@ export interface MusicFeatures {
   beatIndex: number; // with a song map: index of the last map beat (-1 before the first); live: beats counted so far
   map: SongMap | null; // the whole-song analysis, when one is loaded
   fam: FamilyFeatures;
+  spec: Float32Array; // 32-band spectrum 0..1 (40 Hz – 10 kHz), from the song map when there is one
 }
 
 export const createFeatures = (): MusicFeatures => ({
@@ -77,6 +79,7 @@ export const createFeatures = (): MusicFeatures => ({
   bpm: 0, beatConfidence: 0, beatPhase: 0, beat: false, beatCount: 0,
   intensity: 0, breakdown: 0, build: 0, drop: 0, dropCount: 0, section: 'silent', track: 0, beatIndex: -1, map: null,
   fam: createFam(),
+  spec: new Float32Array(SPEC_BANDS),
 });
 
 /** Frequency bands in Hz. */
@@ -167,6 +170,7 @@ export class FeatureExtractor {
 
   readonly beats = new BeatTracker();
   private famTracker = new FamilyTracker();
+  private specLive = new SpecLive();
   private famEnv = FAM_ENV.map(([a, r]) => new Envelope(a, r));
   private famEv = new Int32Array(NF); // next map event per family
   private lastKickCountForFam = 0;
@@ -227,6 +231,7 @@ export class FeatureExtractor {
     this.elapsed = 0;
     this.beats.reset();
     this.famTracker.reset();
+    this.specLive.reset();
     for (const e of this.famEnv) e.reset(0);
     this.famEv.fill(0);
     this.lastKickCountForFam = 0;
@@ -545,6 +550,14 @@ export class FeatureExtractor {
       if (!silent && f.kick > 0.3 && f.intensity - med > 0.2 && t - this.lastDropT > 10 && this.elapsed > 8) this.triggerDrop(t, 0.7);
     }
     this.families(freqDb, t, dt, silent, jumped);
+    const sp = this.map?.spectrum;
+    if (sp) {
+      const j = specFrame(sp, t) * SPEC_BANDS;
+      for (let k = 0; k < SPEC_BANDS; k++) f.spec[k] = silent ? 0 : sp.data[j + k] / 255;
+    } else {
+      this.specLive.process(freqDb, this.binHz, dt, !silent);
+      f.spec.set(this.specLive.level);
+    }
     this.lastT = t;
 
     f.section = silent
