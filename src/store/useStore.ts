@@ -74,7 +74,7 @@ export const TUNNEL_Q: Record<Quality, { segments: number }> = {
 };
 
 export function qualityLabel(world: WorldId, q: Quality) {
-  if (world === 'liquid' || world === 'tunnel') return { low: 'Low', medium: 'Medium', high: 'High', ultra: 'Ultra' }[q];
+  if (world === 'liquid' || world === 'tunnel' || world === 'geometric') return { low: 'Low', medium: 'Medium', high: 'High', ultra: 'Ultra' }[q];
   return `${Math.round(particleCount(world, q) / 1000)}k`;
 }
 
@@ -98,6 +98,7 @@ export interface AppState {
   cinematic: boolean;
   frozen: boolean;
   showPerf: boolean;
+  showFamilies: boolean; // the sound-family legend
   panel: 'none' | 'settings' | 'experiment';
   cursor: CursorMode;
   uiHidden: boolean;
@@ -122,7 +123,7 @@ const WORLD_IDS: WorldId[] = ['cosmic', 'liquid', 'geometric', 'life', 'tunnel']
 const linked = (() => {
   if (typeof window === 'undefined') return null;
   const w = (window as unknown as { __SONIC_WORLD?: string }).__SONIC_WORLD ?? location.hash.replace('#', '');
-  return WORLD_IDS.includes(w as WorldId) && w !== 'geometric' ? (w as WorldId) : null;
+  return WORLD_IDS.includes(w as WorldId) ? (w as WorldId) : null;
 })();
 
 export const useStore = create<AppState>((set) => ({
@@ -138,6 +139,7 @@ export const useStore = create<AppState>((set) => ({
   cinematic: typeof window === 'undefined' || !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches,
   frozen: false,
   showPerf: false,
+  showFamilies: true,
   panel: 'none',
   cursor: 'attract',
   uiHidden: false,

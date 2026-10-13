@@ -2,7 +2,7 @@ import type * as THREE from 'three';
 import { audioEngine } from '../audio/AudioEngine';
 import { renderDemoTrack } from '../audio/demoTrack';
 import { useStore } from '../store/useStore';
-import { drives, perf } from './frameBus';
+import { driveOverride, drives, perf } from './frameBus';
 
 /**
  * Opt-in inspection hook (`?debug` in the URL). Lets automated tests read real simulation
@@ -72,11 +72,21 @@ export function registerStepper(fn: ((dt: number, d: Drives) => void) | null) {
   stepper = fn;
 }
 
-export function runOffline(data: Float32Array, sr: number, seconds: number, every = 15, withMap = false) {
+let mapCache: { data: Float32Array; map: ReturnType<typeof buildSongMap> } | null = null;
+
+/**
+ * @param from start time (s): the analysis and the world are stepped from here, so a moment deep
+ *             in a song can be checked without simulating everything before it (give worlds a
+ *             few seconds of lead-in for their history)
+ */
+export function runOffline(data: Float32Array, sr: number, seconds: number, every = 15, withMap = false, from = 0) {
   if (!stepper) throw new Error('no simulation registered');
   useStore.getState().set({ frozen: true }); // stop the live loop from stepping the sim
   const fx = new FeatureExtractor();
-  if (withMap) fx.setMap(buildSongMap(data, sr));
+  if (withMap) {
+    if (mapCache?.data !== data) mapCache = { data, map: buildSongMap(data, sr) };
+    fx.setMap(mapCache.map);
+  }
   const mp = new DriveMapper();
   const N = 2048;
   const frame = new Float32Array(N);
@@ -85,7 +95,7 @@ export function runOffline(data: Float32Array, sr: number, seconds: number, ever
   const out: Record<string, number | string>[] = [];
   const { gains, sensitivity } = useStore.getState();
   let i = 0;
-  for (let t = N / sr; t < Math.min(seconds, data.length / sr); t += dt, i++) {
+  for (let t = Math.max(N / sr, from); t < Math.min(seconds, data.length / sr); t += dt, i++) {
     const end = Math.floor(t * sr);
     frame.set(data.subarray(end - N, end));
     fftMagDb(frame, freq);
@@ -94,9 +104,10 @@ export function runOffline(data: Float32Array, sr: number, seconds: number, ever
     stepper(dt, d);
     if (i % every === 0) {
       const s = readStats();
-      out.push({ t, section: f.section, bass: f.bass, kick: d.pulse, kicks: f.kickCount, drops: f.dropCount, energy: d.energy, gravity: d.gravity, ...(s ?? {}), ...(extraStats?.() ?? {}), ...((worldInfo?.() ?? {}) as Record<string, number | string>) });
+      out.push({ t, section: f.section, fam: f.fam.level.map((v) => +v.toFixed(2)).join(' ') as unknown as number, bass: f.bass, kick: d.pulse, kicks: f.kickCount, drops: f.dropCount, energy: d.energy, gravity: d.gravity, ...(s ?? {}), ...(extraStats?.() ?? {}), ...((worldInfo?.() ?? {}) as Record<string, number | string>) });
     }
   }
+  driveOverride.d = mp.d; // what is on screen now matches the last offline frame
   return out;
 }
 

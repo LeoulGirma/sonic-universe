@@ -58,6 +58,29 @@ When the map lands, beats and structure switch to it; bands, hits and hi-hats st
 
 On "My Love" (6:10): map built in 3.8 s in Node and 13 s in a software-rendered browser; beat agreement with the reference 0.99 (live tracker 0.87); beats correct in the first 10 s 100 % (live 21 %); drops at 3:12.2, 4:48.2 and 5:20.2 on the reference section boundaries, each with a 4.3–4.5 s build-up.
 
+## Sound families (which instruments are playing)
+
+`src/audio/soundFamilies.ts` splits every frame into six kinds of sound. It does not recognise instruments (no trained model knows "violin" here); it separates sound by how it behaves, which is also what tells instruments apart to the ear:
+
+1. **Harmonic / percussive separation** by median filtering (Fitzgerald, DAFx 2010) on a 64-band log spectrum (30 Hz – 11 kHz). Sustained tones are smooth along time, so a 0.28 s time-median keeps them; transients are smooth along frequency, so a median across ±0.8 octave keeps them. Masks use a 3 dB separation margin (Driedger, Müller & Disch, ISMIR 2014); what is neither (reverb, breath, noise textures) joins no family. Below ~300 Hz a 46 ms window cannot resolve tones across frequency (a bass note smears over many bands), so there the split is by time alone: only the part of a band more than 3 dB above its time-median is a hit.
+2. **Sustained vs moving**: the harmonic part is split again against a ~1.7 s median. What the long median still holds is *sustained* (pads, strings, drones, held chords); what rises 4 dB above it is *moving* (melody, vocals, arps, riffs). The margin keeps beating partials and chorused pads sustained.
+3. **Families** = a component in a range: **kick** (percussive 30–150 Hz), **hits** (percussive 150–4000 Hz: snares, claps, congas, and the attacks of plucked or struck notes), **hats** (percussive 5–11 kHz), **bass** (harmonic 30–250 Hz), **pads** (sustained 250–5000 Hz), **lead** (moving 250–5000 Hz). Also: the melody's register (log-frequency centroid of the moving part) and a harmony colour (chroma of the sustained part, 400 Hz – 4 kHz, mapped onto the circle of fifths so related chords get related colours).
+4. **Levels**: the larger of the family's loudness within the song's own range (the chorus is bigger than the verse) and its share of what is sounding right now (a quiet intro drone still reads as pads), gated so a family more than 24–38 dB below the mix stays dark. Onsets per family use one shared detector; kick onsets come from the confirmed low-hit detector, which rejects bass-note attacks.
+
+For files, the song map computes all of this with **centred** medians (it looks ~0.15 s and ~0.85 s ahead), so the visuals know a held chord is held from its first frame. Live (microphone / system audio) it is causal: a new chord reads as "moving" for about half a second before settling into "sustained", and the kick family comes from the low-hit detector because a causal median cannot tell a new bass note's first frames from a kick.
+
+**Verified** (`test/soundFamilies.test.ts`, 19 tests) on a layered ground-truth arrangement where each source enters at a known time (held chord → bass → kick → hats → legato melody → snare): every family lights when its source enters and not before, in both the song-map and the live path; the held chord stays pads, not lead; the melody sits above the bass register; C → F major moves the harmony colour the right way round the circle of fifths; hats and melody notes are counted at their real rates; every snare is caught as a hit. On the demo track, kick and bass vanish in the breakdown and return on the drop while pads and lead open up. On real music (Hans Zimmer, *F1* and *Anything You Wish You'd Done Differently?*; Justin Timberlake, *My Love*) the families follow the spectrograms: F1's hi-hats appear only in the 0:32–2:08 percussion section; *Anything…*'s opening drone reads as pads alone; My Love's claps and vocals register as hits and lead. A whole song is analysed in 3–9 s in Node.
+
+**Limits, honestly:** a boomy 808's tail is tonal and counts partly as bass; a piano or pluck's attack counts as hits and its body as lead or pads; a vocal and a synth lead in the same register are one family; a broadband test for hits (flatness, percentile floors) was tried and dropped because real claps are band-limited and share frames with everything else, so it rejected real claps as often as note attacks.
+
+The **legend** (bottom right, toggle with **I**) shows all six families live in every world, in the colours World C uses.
+
+## World C: Geometric Intelligence
+
+Every sound family builds its own part of one architecture, in its legend colour (`src/worlds/geometric/`): **kick** pulses the red core and sends a wire shell outward on every kick; **hits** throw orange shards from the core; **hats** light points of a gold geodesic lattice; **bass** raises a violet skyline, a radial record of the bass line with one column per sixteenth note when the tempo is known (64 columns = the last four bars); **pads** construct three teal shells edge by edge while sustained sound holds, dissolve them when it stops, and turn them on each chord change (the harmony tints the teal); **lead** draws a pink ribbon around the structure at the melody's pitch, leaving a marker on each new note. Drops answer with everything at once. This is art direction, not physics. The simulation state is pure TypeScript (`geoState.ts`, 4 tests: each family drives its own part and only that part).
+
+Checked offline in a software-rendered browser on F1 at 0:22 (hits and bass only, no hats yet), 1:04 and 1:44 (all six), 2:30 (bass, pads and lead in the coda, no hats), and on *Anything…* at 0:12 (the drone: pads alone, shells constructing) and 1:14.
+
 ## Simulation (layers 3–4): what is physics and what is art
 
 **Physical (Newtonian, softened):**
@@ -122,7 +145,7 @@ Stars are one draw call (`THREE.Points` reading the position texture). Quality t
 
 ## Verification
 
-- `npm test` — 44 tests. On a synthetic track with ground truth (groove → breakdown with riser → drop): kick recall ≥ 90 % with ≤ 10 % false positives, tempo within 2 BPM at 120 and 100 BPM, beat phase locked, breakdown/build/drop flagged at the right times, hi-hats counted, consistent behaviour 20 dB quieter. Song map: tempo, a beat on every kick from the first one, the grid holding through the breakdown, the drop known in advance on its heard onset, the build-up ramping *before* the drop, no beats or drops fired across a seek, and correct phase on syncopated drums from bar one. On the built-in demo track: synthesis < 4 s, kick recall > 90 %, 122 BPM, one drop at the drop, kicks stronger than bass-note hits. Analysis holds from 60 down to 20 fps (kick recall ≥ 0.96, tempo within 2 BPM).
+- `npm test` — 68 tests (19 for sound families, 4 for World C). On a synthetic track with ground truth (groove → breakdown with riser → drop): kick recall ≥ 90 % with ≤ 10 % false positives, tempo within 2 BPM at 120 and 100 BPM, beat phase locked, breakdown/build/drop flagged at the right times, hi-hats counted, consistent behaviour 20 dB quieter. Song map: tempo, a beat on every kick from the first one, the grid holding through the breakdown, the drop known in advance on its heard onset, the build-up ramping *before* the drop, no beats or drops fired across a seek, and correct phase on syncopated drums from bar one. On the built-in demo track: synthesis < 4 s, kick recall > 90 %, 122 BPM, one drop at the drop, kicks stronger than bass-note hits. Analysis holds from 60 down to 20 fps (kick recall ≥ 0.96, tempo within 2 BPM).
 - `?debug` exposes `window.__sonic.runOffline(samples, sampleRate, seconds)`: analyses audio at exactly 60 fps and steps the real GPU simulation, reading state back from the GPU. Measured on 20,736 stars with a software GPU:
 
 | Input | Mean radius (min–max) | RMS vertical speed | Mean heat | Low-end hits/s |
@@ -150,4 +173,4 @@ Fixes: beat phase now comes from a strength-weighted circular mean of kick times
 
 ## Next
 
-World C (Geometric Intelligence) is registered but not built; each plugs into the same drives. Worth adding with real songs in hand: a calibration pass of the hit-strength and structure thresholds, and WebGPU only if profiling shows the GPGPU pass is the bottleneck.
+Sound families could also shape the other worlds (e.g. pads tinting the galaxy's arms, lead steering the liquid). Worth adding with real songs in hand: a calibration pass of the hit-strength and structure thresholds, and WebGPU only if profiling shows the GPGPU pass is the bottleneck.

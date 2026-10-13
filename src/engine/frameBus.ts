@@ -8,7 +8,9 @@ import { DriveMapper } from '../mapping/drives';
  */
 export const mapper = new DriveMapper();
 export const features = () => audioEngine.features;
-export const drives = () => mapper.d;
+/** debug only: the offline verification harness shows the drives it computed, not the live ones */
+export const driveOverride: { d: import('../mapping/drives').Drives | null } = { d: null };
+export const drives = () => driveOverride.d ?? mapper.d;
 
 export const pointer = {
   ndc: new THREE.Vector2(),

@@ -6,8 +6,9 @@ import { drives, features, perf } from '../engine/frameBus';
 import { IS_MOBILE, LifeParams, LiquidParams, TunnelParams, MAX_DPR, Quality, QUALITY_SIDE, qualityLabel, SimParams, useStore } from '../store/useStore';
 import { WORLDS } from '../worlds/registry';
 import {
-  ICamera, IClose, IExitFull, IFile, IFreeze, IFull, IMic, IPause, IPerf, IPlay, IScreen, ISettings, ISpark, IWorlds,
+  ICamera, IClose, IExitFull, IFamilies, IFile, IFreeze, IFull, IMic, IPause, IPerf, IPlay, IScreen, ISettings, ISpark, IWorlds,
 } from './icons';
+import { FAMILY_INFO, NF } from '../audio/soundFamilies';
 
 const useTransport = () =>
   useSyncExternalStore(
@@ -123,6 +124,7 @@ export function Overlay() {
         case ' ': e.preventDefault(); audioEngine.toggle(); break;
         case 'f': toggleFullscreen(); break;
         case 'p': s.set({ showPerf: !s.showPerf }); break;
+        case 'i': s.set({ showFamilies: !s.showFamilies }); break;
         case 'h': s.set({ uiHidden: !s.uiHidden }); break;
         case 'c': s.set({ cinematic: !s.cinematic }); break;
         case 'z': s.set({ frozen: !s.frozen }); break;
@@ -177,6 +179,7 @@ export function Overlay() {
         <nav className="tools" aria-label="View controls">
           <Tool label={st.cinematic ? 'Cinematic camera on (C)' : 'Cinematic camera off (C)'} on={st.cinematic} onClick={() => st.set({ cinematic: !st.cinematic })}><ICamera /></Tool>
           <Tool label={st.frozen ? 'Resume simulation (Z)' : 'Freeze simulation (Z)'} on={st.frozen} onClick={() => st.set({ frozen: !st.frozen })}><IFreeze /></Tool>
+          <Tool label="Sound families (I)" on={st.showFamilies} onClick={() => st.set({ showFamilies: !st.showFamilies })}><IFamilies /></Tool>
           <Tool label="Performance (P)" on={st.showPerf} onClick={() => st.set({ showPerf: !st.showPerf })}><IPerf /></Tool>
           <Tool label="Settings (O)" on={st.panel !== 'none'} onClick={() => st.set({ panel: st.panel === 'none' ? 'settings' : 'none' })}><ISettings /></Tool>
           <Tool label={isFull ? 'Exit fullscreen (F)' : 'Fullscreen (F)'} onClick={toggleFullscreen}>{isFull ? <IExitFull /> : <IFull />}</Tool>
@@ -205,7 +208,7 @@ export function Overlay() {
           <h1 className="welcome__title">{world.headline ?? 'Play a song.'}</h1>
           <p className="welcome__lede">
             {world.lede}{' '}
-            {st.world === 'tunnel' ? '' : (() => {
+            {st.world === 'tunnel' ? '' : st.world === 'geometric' ? (IS_MOBILE ? 'Drag to orbit.' : 'Drag the view to orbit.') : (() => {
               const thing = { cosmic: 'stars', life: 'particles', liquid: 'the liquid' }[st.world as 'cosmic' | 'life' | 'liquid'] ?? 'it';
               return IS_MOBILE ? `Drag to orbit; press and hold to pull ${thing} toward your finger.` : `Drag the view to orbit; hover to pull ${thing} toward your cursor.`;
             })()}
@@ -224,6 +227,7 @@ export function Overlay() {
       {tr.loading && <div className="loading" role="status">{tr.loadingLabel || 'Loading…'}</div>}
 
       {!empty && <Transport />}
+      {!empty && st.showFamilies && !st.uiHidden && <FamilyLegend />}
 
       {st.panel !== 'none' && <SettingsPanel />}
       {st.showPerf && <PerfPanel />}
@@ -488,7 +492,16 @@ function SettingsPanel() {
         </div>
       ) : (
         <div className="panel__body">
-          {st.world === 'tunnel' ? (
+          {st.world === 'geometric' ? (
+            <>
+              <p className="hint">The music is separated into six kinds of sound by how they behave, not by a trained instrument model: hits are short and broadband, held notes are steady in time, melodies move. Each builds its own structure.</p>
+              <dl className="famlist">
+                {FAMILY_INFO.map((f, k) => (
+                  <div key={f.id}><dt><i style={{ background: f.color }} />{f.name}</dt><dd>{GEO_ROLE[k]}<small>{f.examples}</small></dd></div>
+                ))}
+              </dl>
+            </>
+          ) : st.world === 'tunnel' ? (
             <>
               <p className="hint">The tunnel is pure geometry; travel is locked to the beat clock, one ring per beat.</p>
               {TUNNEL_META.map((m) => (
@@ -521,8 +534,8 @@ function SettingsPanel() {
               ))}
             </>
           )}
-          <h3>Music mapping</h3>
-          {(['bass', 'mid', 'high', 'kick'] as const).map((k) => (
+          {st.world !== 'geometric' && <h3>Music mapping</h3>}
+          {st.world !== 'geometric' && (['bass', 'mid', 'high', 'kick'] as const).map((k) => (
             <Slider key={k} label={(st.world === 'tunnel'
               ? { bass: 'Bass → wall glow and breathing', mid: 'Mids → twist', high: 'Highs → light streaks', kick: 'Kicks → ring flashes' }
               : st.world === 'liquid'
@@ -532,10 +545,59 @@ function SettingsPanel() {
               : { bass: 'Bass → gravity', mid: 'Mids → spiral flow', high: 'Highs → star light', kick: 'Kicks → shockwaves' })[k]}
               value={st.gains[k]} min={0} max={3} onChange={(v) => st.setGain(k, v)} format={(v) => `${Math.round(v * 100)}%`} />
           ))}
-          <button className="btn btn--quiet" onClick={() => st.resetExperiment()}>Reset to defaults</button>
-          <p className="hint">Changes apply live; the particle count lives under Settings.</p>
+          {st.world !== 'geometric' && <button className="btn btn--quiet" onClick={() => st.resetExperiment()}>Reset to defaults</button>}
+          {st.world !== 'geometric' && <p className="hint">Changes apply live; the particle count lives under Settings.</p>}
         </div>
       )}
+    </aside>
+  );
+}
+
+const GEO_ROLE = [
+  'Pulses the core and sends a shell outward on every kick.',
+  'Throws shards from the core on every hit.',
+  'Lights points of the outer lattice on every tick.',
+  'Raises the skyline: one column per sixteenth note, the last four bars of bass.',
+  'Constructs the shells edge by edge while they hold; a new chord turns them.',
+  'Draws the ribbon at the melody\'s pitch; each new note leaves a marker.',
+];
+
+/**
+ * Which kinds of sound are playing right now. Rows light with each family's level; the dot
+ * flashes on its onsets. Written straight to the DOM every frame (no React re-renders).
+ */
+function FamilyLegend() {
+  const bars = useRef<(HTMLElement | null)[]>([]);
+  const dots = useRef<(HTMLElement | null)[]>([]);
+  const rows = useRef<(HTMLElement | null)[]>([]);
+  useEffect(() => {
+    let id = 0;
+    const loop = () => {
+      const fam = drives().fam;
+      for (let k = 0; k < NF; k++) {
+        const v = Math.min(1, fam.level[k]);
+        const b = bars.current[k], dt = dots.current[k], r = rows.current[k];
+        if (b) b.style.transform = `scaleX(${v.toFixed(3)})`;
+        if (dt) {
+          const h = Math.min(1, fam.hit[k] * 1.4);
+          dt.style.boxShadow = `0 0 ${(4 + 14 * h).toFixed(1)}px ${(1 + 4 * h).toFixed(1)}px ${FAMILY_INFO[k].color}${Math.round(40 + 200 * Math.max(h, v * 0.5)).toString(16).padStart(2, '0')}`;
+        }
+        if (r) r.style.opacity = (0.38 + 0.62 * Math.min(1, v * 1.8)).toFixed(2);
+      }
+      id = requestAnimationFrame(loop);
+    };
+    id = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(id);
+  }, []);
+  return (
+    <aside className="families" aria-label="Sound families playing now">
+      {FAMILY_INFO.map((f, k) => (
+        <div key={f.id} className="fam" ref={(el) => { rows.current[k] = el; }} title={f.examples}>
+          <i className="fam__dot" ref={(el) => { dots.current[k] = el; }} style={{ background: f.color }} />
+          <span className="fam__name">{f.name}</span>
+          <span className="fam__bar"><b ref={(el) => { bars.current[k] = el; }} style={{ background: f.color }} /></span>
+        </div>
+      ))}
     </aside>
   );
 }

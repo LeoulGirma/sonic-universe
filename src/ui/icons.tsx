@@ -16,3 +16,4 @@ export const IFreeze = S(<path d="M12 3v18M4.2 7.5l15.6 9M4.2 16.5l15.6-9" />);
 export const IClose = S(<path d="M6 6l12 12M18 6L6 18" />);
 export const IWorlds = S(<><circle cx="12" cy="12" r="8.5" /><ellipse cx="12" cy="12" rx="8.5" ry="3.2" /></>);
 export const IScreen = S(<><rect x="3.5" y="4.5" width="17" height="11.5" rx="1.5" /><path d="M9 20h6M12 16v4" /></>);
+export const IFamilies = S(<><circle cx="6" cy="7" r="1.6" /><path d="M10 7h9" /><circle cx="6" cy="12" r="1.6" /><path d="M10 12h6" /><circle cx="6" cy="17" r="1.6" /><path d="M10 17h8" /></>);

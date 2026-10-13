@@ -4,6 +4,7 @@ import { CosmicGenesis } from './cosmic/CosmicGenesis';
 import { ParticleLife } from './life/ParticleLife';
 import { LiquidDimension } from './liquid/LiquidDimension';
 import { Tunnel } from './tunnel/Tunnel';
+import { Geometric } from './geometric/Geometric';
 
 /**
  * Worlds are plug-ins: a component that reads `drives()` from the frame bus and renders.
@@ -29,7 +30,11 @@ export const WORLDS: WorldDef[] = [
     headline: 'Play a song. Watch it pour.',
     lede: 'The bass swells the heavy masses, the mids ripple and swirl the middle, the highs shimmer the droplets. Kicks send waves across the surface; drops tear it apart.',
   },
-  { id: 'geometric', name: 'Geometric Intelligence', tagline: 'Sound constructs moving architecture', Component: null },
+  {
+    id: 'geometric', name: 'Geometric Intelligence', tagline: 'Every instrument builds its own part', Component: Geometric,
+    headline: 'Play a song. Watch each sound build its part.',
+    lede: 'The music is split into six kinds of sound, each building its own structure in its own colour: kicks pulse the red core, snares and claps throw orange shards, hi-hats light the gold lattice, the bass raises a violet skyline, chords and strings construct the teal shells, and the melody draws a pink ribbon at its own pitch.',
+  },
   {
     id: 'life', name: 'Particle Life', tagline: 'Each song grows its own organisms', Component: ParticleLife,
     headline: 'Play a song. Watch it grow organisms.',

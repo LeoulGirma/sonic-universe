@@ -8,8 +8,15 @@ import { expCoef } from '../audio/dsp';
 
 const BASE_FOV = 55;
 /** how far the camera sits, per world (the liquid is a single object, the galaxy a whole disk) */
-const WORLD_SCALE: Record<string, number> = { cosmic: 1, life: 1, liquid: 0.62 };
-const worldScale = () => WORLD_SCALE[useStore.getState().world] ?? 1;
+const WORLD_SCALE: Record<string, number> = { cosmic: 1, life: 1, liquid: 0.62, geometric: 0.42 };
+/** on portrait screens the horizontal view is narrow: compact worlds need the camera further out */
+const portrait = (world: string) => {
+  if (world !== 'geometric' || typeof window === 'undefined') return 1;
+  const aspect = window.innerWidth / Math.max(1, window.innerHeight);
+  return aspect < 1 ? Math.min(1.9, Math.pow(1 / aspect, 0.6)) : 1;
+};
+const scaleOf = (world: string) => (WORLD_SCALE[world] ?? 1) * portrait(world);
+const worldScale = () => scaleOf(useStore.getState().world);
 /** keys currently held (shared with worlds that steer the camera themselves) */
 export const keys = new Set<string>();
 
@@ -73,10 +80,10 @@ export function CameraRig() {
           // leaving the tunnel: restore the orbit view; entering it: the world takes over
           controls.target.set(0, 0, 0);
           cam.up.set(0, 1, 0);
-          cam.position.set(0, 34, 70).multiplyScalar(WORLD_SCALE[s.world] ?? 1);
+          cam.position.set(0, 34, 70).multiplyScalar(scaleOf(s.world));
           return;
         }
-        const k = (WORLD_SCALE[s.world] ?? 1) / (WORLD_SCALE[prev.world] ?? 1);
+        const k = scaleOf(s.world) / scaleOf(prev.world);
         cam.position.sub(controls.target).multiplyScalar(k).add(controls.target);
       }),
     [cam, controls],

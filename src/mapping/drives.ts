@@ -2,6 +2,17 @@ import type { MusicFeatures } from '../audio/FeatureExtractor';
 import type { SongMap } from '../audio/songMap';
 import type { MappingGains } from '../store/useStore';
 import { Envelope, expCoef } from '../audio/dsp';
+import { NF } from '../audio/soundFamilies';
+
+/** Sound families as drives (index with F.kick … F.lead from soundFamilies). */
+export interface FamilyDrives {
+  level: number[]; // 0..~1.3 presence, sensitivity applied
+  hit: number[]; // onset impulse per family
+  events: number[]; // monotonically increasing onset counters per family
+  melody: number; // 0..1 register of the moving part
+  hue: number; // 0..1 harmony colour (circle of fifths)
+  hueStrength: number;
+}
 
 /**
  * Layer 2 — music feature mapping.
@@ -41,12 +52,14 @@ export interface Drives {
   beatIndex: number; // see MusicFeatures.beatIndex
   songTime: number; // playback time in seconds
   map: SongMap | null; // whole-song structure (beats, breakdowns, drops, build-ups) when available
+  fam: FamilyDrives;
 }
 
 export const createDrives = (): Drives => ({
   time: 0, idle: 1, gravity: 0, pulse: 0, shimmer: 0, sparkle: 0, flow: 0, energy: 0, calm: 0, tension: 0,
   release: 0, hue: 0.4, beatPhase: 0, bpm: 0, confidence: 0, kickEvents: 0, hatEvents: 0, dropEvents: 0, beatEvents: 0, lastKick: 0,
   track: 0, centroidHz: 1000, tilt: 0, activeTime: 0, beatIndex: -1, songTime: 0, map: null,
+  fam: { level: new Array(NF).fill(0), hit: new Array(NF).fill(0), events: new Array(NF).fill(0), melody: 0.3, hue: 0, hueStrength: 0 },
 });
 
 /** soft knee so high sensitivity saturates gracefully instead of clipping */
@@ -77,6 +90,7 @@ export class DriveMapper {
       d.track = f.track;
       d.activeTime = 0;
       this.lk = this.lh = this.ld = 0;
+      this.lf.fill(0);
     }
     if (f.active) {
       d.activeTime += dt;
@@ -96,8 +110,19 @@ export class DriveMapper {
     if (f.dropCount > this.ld) d.dropEvents++;
     if (f.beat) d.beatEvents++;
     this.lk = f.kickCount; this.lh = f.hatCount; this.ld = f.dropCount;
+    const ff = f.fam, df = d.fam;
+    for (let k = 0; k < NF; k++) {
+      df.level[k] = soft(ff.level[k] * s) * live;
+      df.hit[k] = ff.hit[k] * live;
+      if (ff.count[k] > this.lf[k]) df.events[k]++;
+      this.lf[k] = ff.count[k];
+    }
+    df.melody = ff.melody;
+    df.hue = ff.hue;
+    df.hueStrength = ff.hueStrength * live;
     return d;
   }
+  private lf = new Array(NF).fill(0);
   private lk = 0;
   private lh = 0;
   private ld = 0;
