@@ -283,7 +283,8 @@ export function Valley() {
     });
 
     const group = new THREE.Group();
-    group.add(sky, ground, ...curtains, monos, path, dust, orb, ...gates.map((x) => x.g));
+    // the orb and the gates crowded the centre of the view: the path and the ground carry them now
+    group.add(sky, ground, ...curtains, monos, path, dust);
     const mats = [ground, ...curtains, path, monos, dust].map((m) => m.material as THREE.ShaderMaterial);
     return { group, ground, sky, curtains, path, orb, halo, monos, instAttr, gates, dust, mats, vertsTotal: gk.length / 2 };
   }, [tex, specTex, sectTex, nowSpec]);
@@ -361,6 +362,7 @@ export function Valley() {
         for (; i < ev.length && ev[i] < tHi && n < MAX_HITS; i++) {
           const b = beatOf(map.beats, ev[i]) + clock.drift;
           const side = Math.sin(b * 12.9898) * 43758.5453 % 1 > 0 ? 1 : -1;
+          if (es[i] < 0.6) continue;
           a.set([b, side, Math.min(1, es[i])], n * 3);
           n++;
         }

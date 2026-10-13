@@ -182,6 +182,9 @@ export const groundFragment = /* glsl */ `
     // the now line: what is sounding at this exact moment lights up as it crosses
     col += mix(tint, vec3(1.0), 0.35) * nowGlow(vB) * (0.2 + 1.7 * nowSpec(vU)) * (0.4 + ridge);
     col += uKickCol * vRing * (0.1 + 0.6 * ridge) * (1.0 + 1.5 * vW.z);
+    // where one landscape gives way to the next, the ground glows softly across the valley
+    float mixing = 1.0 - max(max(vW.x, vW.y), max(vW.z, vW.w));
+    col += biomeTint * ridge * mixing * 1.2;
     float fog = 1.0 - exp(-max(vZ, 0.0) / 115.0);
     col = mix(col, uHorizon, fog);
     gl_FragColor = vec4(col, 1.0);
@@ -261,7 +264,8 @@ export const pathVertex = /* glsl */ `
   varying float vLead;
   varying float vB;
   varying float vZ;
-  float melodyY(float m) { return 0.6 + 5.2 * clamp((m - 0.12) / 0.45, 0.0, 1.0); }
+  // the melody lies along the ground, rising only a little with pitch (tall jumps read as clutter)
+  float melodyY(float m) { return -1.7 + 1.2 * clamp((m - 0.12) / 0.45, 0.0, 1.0); }
   void main() {
     float row = pk.y;
     float b = uBase + row / float(RPB);
@@ -287,7 +291,7 @@ export const pathFragment = /* glsl */ `
     float near = smoothstep(1.0, 5.0, vZ);
     float fog = exp(-max(vZ, 0.0) / 130.0);
     float past = vB < uPos ? 0.35 : 0.8;
-    float a = (0.03 + 0.9 * vLead) * core * near * fog * past + nowGlow(vB) * vLead * 1.5;
+    float a = (0.02 + 0.6 * vLead) * core * near * fog * past + nowGlow(vB) * vLead * 0.8;
     gl_FragColor = vec4(uLeadCol * a, 1.0);
   }
 `;
@@ -306,9 +310,9 @@ export const monoVertex = /* glsl */ `
     float row = (b - uBase) * float(RPB);
     float st = inst.z;
     float flash = nowGlow(b);
-    float h = (1.5 + 10.0 * pow(st, 1.5)) * step(0.01, st) * (1.0 + 0.3 * flash);
+    float h = (1.0 + 6.0 * pow(st, 2.0)) * step(0.01, st) * (1.0 + 0.2 * flash);
     float R = floor(b * float(RPB) + 0.5);
-    float x = pathX(b) + inst.y * (14.0 + 9.0 * hash12(vec2(R, inst.y)));
+    float x = pathX(b) + inst.y * (24.0 + 14.0 * hash12(vec2(R, inst.y)));
     float ground = terrain(x, b, row);
     vec3 p = position;                                 // unit box, y 0..1
     vY = p.y; vHits = st; vB = b;
@@ -330,7 +334,7 @@ export const monoFragment = /* glsl */ `
     float near = smoothstep(1.0, 6.0, vZ);
     float past = vB < uPos ? 0.35 : 0.6;
     float g = 0.1 + 0.9 * pow(1.0 - vY, 2.0) + 0.6 * smoothstep(0.96, 1.0, vY);
-    float k = past + 2.4 * nowGlow(vB);                // a hit flares exactly as it sounds
+    float k = 0.5 * past + 1.2 * nowGlow(vB);          // a hit flares exactly as it sounds
     gl_FragColor = vec4(uHitsCol * g * vHits * fog * near * k, 1.0);
   }
 `;
