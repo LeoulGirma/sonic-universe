@@ -6,6 +6,7 @@ import { LiquidDimension } from './liquid/LiquidDimension';
 import { Tunnel } from './tunnel/Tunnel';
 import { Geometric } from './geometric/Geometric';
 import { Valley } from './valley/Valley';
+import { Ink } from './ink/Ink';
 
 /**
  * Worlds are plug-ins: a component that reads `drives()` from the frame bus and renders.
@@ -50,5 +51,10 @@ export const WORLDS: WorldDef[] = [
     id: 'valley', name: 'Sound Valley', tagline: 'Fly through a landscape each sound builds', Component: Valley,
     headline: 'Play a song. Fly through its landscape.',
     lede: 'Every kind of sound builds its own part of a wide night valley: the bass raises the hills under you, chords and strings hang aurora curtains in the sky, the melody is a glowing path ahead that rises and falls with the tune, snares and claps raise light monoliths along the sides, hi-hats glint in the air, and each kick sends a soft ring across the ground. With a song file, the land ahead is built from what is about to play. Move the pointer to look around.',
+  },
+  {
+    id: 'ink', name: 'Ink in Water', tagline: 'Every sound pours its own colour into a living fluid', Component: Ink,
+    headline: 'Play a song. Watch it pour.',
+    lede: 'A real fluid where each kind of sound adds its own ink: kicks push red bursts from the centre, the bass turns a slow violet whirlpool, chords breathe teal clouds in from the sides, the melody draws a pink stream that rises and falls with the tune, snares dart orange and hi-hats fleck gold. New sections stir the whole tank. Drag to stir it yourself.',
   },
 ];

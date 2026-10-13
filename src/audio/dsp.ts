@@ -134,3 +134,22 @@ export class TimeRing {
     this.count = 0;
   }
 }
+
+/**
+ * Critically damped spring: the music sets a target, the value glides to it with weight (no
+ * jumps, no wobble). `freq` is roughly how many times per second it can follow (higher = snappier).
+ */
+export class Spring {
+  vel = 0;
+  constructor(public value = 0) {}
+  step(target: number, dt: number, freq = 3) {
+    const w = 2 * Math.PI * freq;
+    // exact integration of x'' = -w²(x - target) - 2w x' over dt
+    const x0 = this.value - target;
+    const e = Math.exp(-w * dt);
+    const v0 = this.vel;
+    this.value = target + (x0 + (v0 + w * x0) * dt) * e;
+    this.vel = (v0 - (v0 + w * x0) * w * dt) * e;
+    return this.value;
+  }
+}

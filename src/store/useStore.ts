@@ -4,7 +4,7 @@ import { DEFAULT_LIQUID, LiquidParams } from '../worlds/liquid/liquidSim';
 import { DEFAULT_TUNNEL, TunnelParams } from '../worlds/tunnel/tunnelState';
 export type { LifeParams, LiquidParams, TunnelParams };
 
-export type WorldId = 'cosmic' | 'liquid' | 'geometric' | 'life' | 'tunnel' | 'valley';
+export type WorldId = 'cosmic' | 'liquid' | 'geometric' | 'life' | 'tunnel' | 'valley' | 'ink';
 export type Quality = 'low' | 'medium' | 'high' | 'ultra';
 export type CursorMode = 'attract' | 'repel' | 'off';
 export type PaletteId = 'nebula' | 'solar' | 'aurora' | 'rose' | 'mono';
@@ -74,7 +74,7 @@ export const TUNNEL_Q: Record<Quality, { segments: number }> = {
 };
 
 export function qualityLabel(world: WorldId, q: Quality) {
-  if (world === 'liquid' || world === 'tunnel' || world === 'geometric' || world === 'valley') return { low: 'Low', medium: 'Medium', high: 'High', ultra: 'Ultra' }[q];
+  if (world === 'liquid' || world === 'tunnel' || world === 'geometric' || world === 'valley' || world === 'ink') return { low: 'Low', medium: 'Medium', high: 'High', ultra: 'Ultra' }[q];
   return `${Math.round(particleCount(world, q) / 1000)}k`;
 }
 
@@ -120,7 +120,7 @@ export interface AppState {
 
 const maxDpr = typeof window !== 'undefined' ? Math.min(window.devicePixelRatio || 1, 2) : 1;
 
-const WORLD_IDS: WorldId[] = ['cosmic', 'liquid', 'geometric', 'life', 'tunnel', 'valley'];
+const WORLD_IDS: WorldId[] = ['cosmic', 'liquid', 'geometric', 'life', 'tunnel', 'valley', 'ink'];
 const linked = (() => {
   if (typeof window === 'undefined') return null;
   const w = (window as unknown as { __SONIC_WORLD?: string }).__SONIC_WORLD ?? location.hash.replace('#', '');

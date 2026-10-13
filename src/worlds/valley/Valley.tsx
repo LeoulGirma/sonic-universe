@@ -7,7 +7,7 @@ import { SPEC_BANDS, specFrame } from '../../audio/spectrum';
 import type { SongMap } from '../../audio/songMap';
 import { useStore } from '../../store/useStore';
 import { cameraOwner, drives, perf, pointer } from '../../engine/frameBus';
-import { Envelope, expCoef } from '../../audio/dsp';
+import { Envelope, Spring, expCoef } from '../../audio/dsp';
 import type { Drives } from '../../mapping/drives';
 import { debugEnabled, registerExtras, registerSim, registerStepper } from '../../engine/debug';
 import {
@@ -303,6 +303,7 @@ export function Valley() {
   const s = useRef({
     t: 0, lastHits: -1, look: new THREE.Vector3(0, 2, -40), camX: 0, kickAge: 9, kickStr: 0, lastKick: -1, nowB: NOW_MAP, orbY: 2,
     lift: new Envelope(2.5, 4), leadHit: 0,
+    specS: Array.from({ length: 32 }, () => new Spring()), camY: new Spring(7), glow: new Spring(),
   });
 
   useEffect(() => {
@@ -416,8 +417,9 @@ export function Valley() {
     gu.uKickAge.value = S.kickAge;
     gu.uKickStr.value = S.kickStr;
     gu.uNowZ.value = -S.nowB * SPACING;
-    nowSpec.set(d.spec);
-    (scene.sky.material as THREE.ShaderMaterial).uniforms.uGlow.value = 0.3 * d.energy + 0.25 * d.fam.level[F.pads];
+    // springs: the land breathes with the sound but glides between the analysis frames
+    for (let k = 0; k < 32; k++) nowSpec[k] = S.specS[k].step(d.spec[k], dt, 6);
+    (scene.sky.material as THREE.ShaderMaterial).uniforms.uGlow.value = S.glow.step(0.3 * d.energy + 0.25 * d.fam.level[F.pads], dt, 0.5);
     const first = Math.ceil((camB - 2) / CURTAIN_EVERY) * CURTAIN_EVERY;
     scene.curtains.forEach((c, i) => {
       const cb = first + i * CURTAIN_EVERY;
@@ -446,7 +448,7 @@ export function Valley() {
       -(S.nowB + 10) * SPACING,
     );
     S.look.lerp(tgt, expCoef(dt, 0.7));
-    cam.position.set(S.camX, 6.2 + 2.2 * lift, 0);
+    cam.position.set(S.camX, S.camY.step(6.2 + 2.2 * lift, dt, 0.25), 0);
     cam.up.set(0, 1, 0);
     cam.lookAt(S.look);
     const fov = size.width < size.height ? 76 : 64;

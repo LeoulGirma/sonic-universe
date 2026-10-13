@@ -126,6 +126,12 @@ Built after the tunnel proved tiring to watch (tight space, zoom pumping, full-s
 
 Comfort rules: slow travel (2.4 units per beat), fixed field of view, no camera roll, ridges near the route kept below eye level, light on darkness, no full-screen flashes. Checked on a 125 BPM Afrobeats track (LARK x Nahibeatz x Yonta) and F1.
 
+## World G: Ink in Water
+
+A real 2D fluid: stable fluids on the GPU (Stam 1999, in the WebGL formulation popularised by Pavel Dobryakov): semi-Lagrangian advection, vorticity confinement, a Jacobi pressure solve and gradient subtraction on half-float textures (96–224 cells on the short side, dye at 512–1440). Each sound family injects its own colour of dye with its own kind of force, and the fluid does the blending: kicks push red bursts out from the centre, the bass turns a slow violet whirlpool, pads breathe teal clouds in from the sides, the melody draws a pink stream from an emitter that rises and falls with the tune, hits dart orange, hats fleck gold; new sections and drops stir the tank into one vortex, and breakdowns clear the water faster. Drag to stir. Timescales are split: phrases move the emitters, beats only add impulses, and continuous emitters follow spring-smoothed levels. Physics: the incompressible Euler equations, discretised. Art: what is injected, where, and the colours.
+
+**Smoothing everywhere:** a critically damped spring (`Spring` in `dsp.ts`) eases the valley's breathing spectrum, camera height and sky glow; the valley's ridges interpolate between 16th-note rows and neighbouring bands, use the mean over each 16th rather than its peak, and the ground mesh is finer.
+
 ## World B: Liquid Dimension
 
 A convincing GPU approximation, not fluid dynamics (as the brief allows). Two layers:
