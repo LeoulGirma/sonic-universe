@@ -174,6 +174,7 @@ export class FeatureExtractor {
   private famEnv = FAM_ENV.map(([a, r]) => new Envelope(a, r));
   private famEv = new Int32Array(NF); // next map event per family
   private lastKickCountForFam = 0;
+  private kickIdx = -1; // next map kick
 
   /** Called for every confirmed low-end hit (used by the song-map builder). */
   onHit: ((h: MapHit) => void) | null = null;
@@ -235,6 +236,7 @@ export class FeatureExtractor {
     for (const e of this.famEnv) e.reset(0);
     this.famEv.fill(0);
     this.lastKickCountForFam = 0;
+    this.kickIdx = -1;
   }
 
   /** Call on seek: transient history is invalid, normalisation is kept. */
@@ -246,6 +248,7 @@ export class FeatureExtractor {
     this.beats.reset();
     this.lastKickT = -10;
     this.famEv.fill(-1); // re-find on the next frame
+    this.kickIdx = -1;
   }
 
   /** Sound families: exact from the song map when there is one, causal live analysis otherwise. */
@@ -292,8 +295,23 @@ export class FeatureExtractor {
       fam.hue = this.famTracker.hue;
       fam.hueStrength = this.famTracker.hueStrength;
     }
-    // kick onsets come from the confirmed low-hit detector (it rejects bass-note attacks)
-    if (this.f.kickCount !== this.lastKickCountForFam) {
+    // kick onsets: with a song map, its confirmed hits at their exact (latency-corrected) times;
+    // live, the confirmed low-hit detector (it rejects bass-note attacks)
+    const mk = this.map?.kicks;
+    if (mk && mk.t.length) {
+      if (jumped || this.kickIdx < 0) {
+        let lo = 0, hi = mk.t.length;
+        while (lo < hi) { const m = (lo + hi) >> 1; if (mk.t[m] <= t) lo = m + 1; else hi = m; }
+        this.kickIdx = lo;
+      } else {
+        while (this.kickIdx < mk.t.length && mk.t[this.kickIdx] <= t) {
+          fam.count[FAM.kick]++;
+          fam.hit[FAM.kick] = Math.max(fam.hit[FAM.kick], mk.strength[this.kickIdx]);
+          this.kickIdx++;
+        }
+      }
+      this.lastKickCountForFam = this.f.kickCount;
+    } else if (this.f.kickCount !== this.lastKickCountForFam) {
       if (this.f.kickCount > this.lastKickCountForFam) {
         fam.count[FAM.kick]++;
         fam.hit[FAM.kick] = Math.max(fam.hit[FAM.kick], this.f.kick);

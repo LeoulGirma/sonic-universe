@@ -2,6 +2,7 @@ import { FeatureExtractor } from './FeatureExtractor';
 import { fftMagDb } from './fft';
 import { FamilyCollector, type FamilyTrack } from './soundFamilies';
 import { SpecCollector, type SpecTrack } from './spectrum';
+import { findSections, type Section } from './sections';
 
 /**
  * A whole-song analysis built ahead of time for files (not the microphone).
@@ -25,6 +26,10 @@ export interface SongMap {
   families: FamilyTrack | null;
   /** 32-band spectrogram at 30 fps, normalised per band (for visuals that draw the music's shape) */
   spectrum: SpecTrack | null;
+  /** confirmed low-end hits (kicks), latency-corrected: exact times for on-beat visuals */
+  kicks: { t: Float32Array; strength: Float32Array };
+  /** sections (verse/chorus-like passages); sections with the same label are the same kind */
+  sections: Section[];
 }
 
 export interface MapHit {
@@ -295,9 +300,11 @@ export function buildSongMap(pcm: Float32Array, sr: number, onProgress?: (p: num
   onProgress?.(0.85);
   const families = nFrames > 0 ? fam.build(SILENCE_DB) : null;
   const spectrum = nFrames > 0 ? spec.build(SILENCE_DB) : null;
+  const sections = beats.length > 1 ? findSections(beats, duration, spectrum, families, breakdowns, drops) : [];
+  const kicks = { t: Float32Array.from(hits.map((h) => h.start)), strength: Float32Array.from(hits.map((h) => Math.min(1, 0.2 + 0.6 * h.strength))) };
   onProgress?.(1);
 
-  return { duration, bpm, beats, beatConfidence, breakdowns, drops, anticipation, levels, families, spectrum };
+  return { duration, bpm, beats, beatConfidence, breakdowns, drops, anticipation, levels, families, spectrum, kicks, sections };
 }
 
 /** Index of the last beat at or before t (-1 if before the first). */

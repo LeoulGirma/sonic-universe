@@ -1,5 +1,6 @@
 import { FeatureExtractor, MusicFeatures } from './FeatureExtractor';
 import type { SongMap } from './songMap';
+import { useStore } from '../store/useStore';
 import MapWorker from './songMap.worker?worker&inline';
 
 export type SourceKind = 'none' | 'file' | 'mic' | 'system';
@@ -15,7 +16,7 @@ export interface TransportState {
   /** whole-song analysis for files: 'mapping' while it runs in the background */
   mapState: 'none' | 'mapping' | 'ready' | 'off';
   mapProgress: number;
-  mapInfo: { bpm: number; drops: number[]; breakdowns: [number, number][]; duration: number; confidence: number } | null;
+  mapInfo: { bpm: number; drops: number[]; breakdowns: [number, number][]; duration: number; confidence: number; sections: { start: number; end: number; label: number; biome: number }[] } | null;
 }
 
 /** How a file is being played: a media element (streams, low memory) or a decoded buffer. */
@@ -193,7 +194,7 @@ export class AudioEngine {
         this.set({
           mapState: 'ready',
           mapProgress: 1,
-          mapInfo: { bpm: map.bpm, drops: map.drops.map((d) => d.t), breakdowns: map.breakdowns, duration: map.duration, confidence: map.beatConfidence },
+          mapInfo: { bpm: map.bpm, drops: map.drops.map((d) => d.t), breakdowns: map.breakdowns, duration: map.duration, confidence: map.beatConfidence, sections: map.sections.map(({ start, end, label, biome }) => ({ start, end, label, biome })) },
         });
       }
     };
@@ -422,6 +423,13 @@ export class AudioEngine {
     this.set({ loading, loadingLabel: loading ? label : '' });
   }
 
+  /** seconds between the playback clock and the sound leaving the speakers */
+  outputDelay() {
+    const c = this.ctx as (AudioContext & { outputLatency?: number }) | null;
+    const browser = (c?.outputLatency ?? 0) + (c?.baseLatency ?? 0);
+    return Math.min(0.5, Math.max(0, browser + useStore.getState().syncMs / 1000));
+  }
+
   /** Pull one analysis frame. Call once per rendered frame, before the worlds update. */
   analyse(dt: number): MusicFeatures {
     const a = this.analyser;
@@ -437,7 +445,11 @@ export class AudioEngine {
     const ref = this.state.source === 'file' ? this.currentTime : this.ctx!.currentTime;
     this.clock += dt;
     if (Math.abs(this.clock - ref) > 0.12) this.clock = ref;
-    const t = this.clock;
+    let t = this.clock;
+    // With a song map the visuals come from the map, so they can be shown at the time you HEAR:
+    // the analyser and the playback clock run ahead of the speakers by the output latency the
+    // browser reports, plus whatever the user dialled in for a TV or Bluetooth speakers.
+    if (this.state.source === 'file' && this.extractor.hasMap) t = Math.max(0, t - this.outputDelay());
     return this.extractor.process(this.freq, this.wave, this.ctx!.sampleRate, t, dt);
   }
 

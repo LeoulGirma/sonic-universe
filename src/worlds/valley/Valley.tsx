@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { FamilyRows, TunnelClock, beatTime } from '../tunnel/tunnelState';
 import { F, FAMILY_INFO } from '../../audio/soundFamilies';
 import { SPEC_BANDS, specFrame } from '../../audio/spectrum';
+import type { SongMap } from '../../audio/songMap';
 import { useStore } from '../../store/useStore';
 import { cameraOwner, drives, perf, pointer } from '../../engine/frameBus';
 import { Envelope, expCoef } from '../../audio/dsp';
@@ -37,7 +38,59 @@ const DUST_PER_ROW = 6;
 const NOW_MAP = 5.5; // beats between the camera and the now line, with a song map
 const NOW_LIVE = 50; // live: the land is made near the horizon and flows toward you
 
+const MAX_HITS = 512;
+const GATES = 4;
+const BIOME_COL = ['#8b6bff', '#9ff3ea', '#4b8cff', '#ffb547'].map((c) => new THREE.Color(c));
+
 const COL = FAMILY_INFO.map((f) => new THREE.Color(f.color));
+
+/** fractional map-beat position of time t (inverse of beatTime) */
+function beatOf(beats: Float64Array, t: number) {
+  const n = beats.length;
+  const period = beats[1] - beats[0];
+  if (t <= beats[0]) return (t - beats[0]) / period;
+  if (t >= beats[n - 1]) return n - 1 + (t - beats[n - 1]) / period;
+  let lo = 0, hi = n - 1;
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if (beats[m] <= t) lo = m; else hi = m; }
+  return lo + (t - beats[lo]) / (beats[hi] - beats[lo]);
+}
+
+/**
+ * Which landscape each row belongs to: biome weights (blended over two beats at a boundary), and
+ * the section label's seed plus beats into the section, so a returning section regrows the same land.
+ */
+class SectRows {
+  readonly data = new Float32Array(NROWS * 2 * 4);
+  fill(clock: TunnelClock, map: SongMap | null, base: number) {
+    const out = this.data, W = NROWS * 4;
+    const secs = map?.sections;
+    for (let r = 0; r < NROWS; r++) {
+      const b = base + r / RPB;
+      out.fill(0, r * 4, r * 4 + 4);
+      if (clock.mode !== 'map' || !secs || !secs.length) {
+        out[r * 4] = 1;
+        out.set([0.31, b, 0, 0], W + r * 4);
+        continue;
+      }
+      const bi = b - clock.drift;
+      let k = 0;
+      while (k + 1 < secs.length && secs[k + 1].startBeat <= bi) k++;
+      const cur = secs[k];
+      // blend into the next landscape over the two beats around its start
+      const next = secs[k + 1];
+      const toNext = next ? next.startBeat - bi : Infinity;
+      const fromCur = bi - cur.startBeat;
+      let w = 1, other = -1;
+      if (toNext < 1) { w = 0.5 + 0.5 * toNext; other = next.biome; }
+      else if (fromCur < 1 && k > 0) { w = 0.5 + 0.5 * fromCur; other = secs[k - 1].biome; }
+      w = w * w * (3 - 2 * w);
+      out[r * 4 + cur.biome] += w;
+      if (other >= 0) out[r * 4 + other] += 1 - w;
+      else out[r * 4 + cur.biome] += 1 - w;
+      out.set([0.31 + cur.label * 0.173, Math.max(0, fromCur), 0, 0], W + r * 4);
+    }
+  }
+}
 const additive = { transparent: true, depthWrite: false, blending: THREE.AdditiveBlending } as const;
 const pathX = (b: number) => 9 * Math.sin(b * 0.045) + 4 * Math.sin(b * 0.017 + 1);
 const melodyY = (m: number) => 0.6 + 5.2 * Math.min(1, Math.max(0, (m - 0.12) / 0.45));
@@ -94,13 +147,21 @@ export function Valley() {
     t.needsUpdate = true;
     return t;
   }, [spec]);
+  const sect = useMemo(() => new SectRows(), []);
+  const sectTex = useMemo(() => {
+    const t = new THREE.DataTexture(sect.data, NROWS, 2, THREE.RGBAFormat, THREE.FloatType);
+    t.minFilter = t.magFilter = THREE.NearestFilter;
+    t.needsUpdate = true;
+    return t;
+  }, [sect]);
   const clock = useMemo(() => new TunnelClock(), []);
+  const liveHits = useRef<{ b: number; s: number }[]>([]);
   const lastDrives = useRef<Drives | null>(null);
 
   const scene = useMemo(() => {
     const defines = { RPB, NROWS };
     const common = () => ({
-      uFamTex: { value: tex }, uSpecTex: { value: specTex }, uPos: { value: 0 }, uCam: { value: 0 }, uBase: { value: 0 },
+      uFamTex: { value: tex }, uSpecTex: { value: specTex }, uSectTex: { value: sectTex }, uPos: { value: 0 }, uCam: { value: 0 }, uBase: { value: 0 },
       uSpacing: { value: SPACING }, uTime: { value: 0 },
     });
     const horizon = new THREE.Color('#120d2a');
@@ -128,6 +189,7 @@ export function Valley() {
       uniforms: {
         ...common(), uBassCol: { value: COL[F.bass] }, uPadsCol: { value: COL[F.pads] }, uHatsCol: { value: COL[F.hats] },
         uKickCol: { value: COL[F.kick] }, uHorizon: { value: horizon }, uKickAge: { value: 9 }, uKickStr: { value: 0 }, uNowZ: { value: 0 },
+        uNowSpec: { value: new Float32Array(32) },
       },
     }));
     ground.frustumCulled = false;
@@ -184,10 +246,10 @@ export function Valley() {
     const mGeo = new THREE.InstancedBufferGeometry();
     mGeo.index = box.index;
     mGeo.setAttribute('position', box.getAttribute('position'));
-    const inst = new Float32Array(vRows * 4);
-    for (let r = 0; r < vRows; r++) inst.set([r, -1, r, 1], r * 4);
-    mGeo.setAttribute('inst', new THREE.InstancedBufferAttribute(inst, 2));
-    mGeo.instanceCount = vRows * 2;
+    const instAttr = new THREE.InstancedBufferAttribute(new Float32Array(MAX_HITS * 3), 3);
+    instAttr.setUsage(THREE.DynamicDrawUsage);
+    mGeo.setAttribute('inst', instAttr);
+    mGeo.instanceCount = MAX_HITS;
     const monos = new THREE.Mesh(mGeo, new THREE.ShaderMaterial({
       vertexShader: monoVertex, fragmentShader: monoFragment, defines, ...additive,
       uniforms: { ...common(), uHitsCol: { value: COL[F.hits] } },
@@ -206,11 +268,25 @@ export function Valley() {
     }));
     dust.frustumCulled = false;
 
+    // gates: an arch of light over the route where a new section (a new landscape) begins
+    const beam = new THREE.BoxGeometry(1, 1, 1);
+    const gates = Array.from({ length: GATES }, () => {
+      const m = new THREE.MeshBasicMaterial({ color: 0xffffff, ...additive });
+      const g = new THREE.Group();
+      const l = new THREE.Mesh(beam, m), r = new THREE.Mesh(beam, m), top = new THREE.Mesh(beam, m);
+      l.scale.set(0.5, 10, 0.5); l.position.set(-7, 3, 0);
+      r.scale.set(0.5, 10, 0.5); r.position.set(7, 3, 0);
+      top.scale.set(14.5, 0.5, 0.5); top.position.set(0, 8, 0);
+      g.add(l, r, top);
+      g.visible = false;
+      return { g, m };
+    });
+
     const group = new THREE.Group();
-    group.add(sky, ground, ...curtains, monos, path, dust, orb);
+    group.add(sky, ground, ...curtains, monos, path, dust, orb, ...gates.map((x) => x.g));
     const mats = [ground, ...curtains, path, monos, dust].map((m) => m.material as THREE.ShaderMaterial);
-    return { group, ground, sky, curtains, path, orb, halo, monos, dust, mats, vertsTotal: gk.length / 2 };
-  }, [tex, specTex]);
+    return { group, ground, sky, curtains, path, orb, halo, monos, instAttr, gates, dust, mats, vertsTotal: gk.length / 2 };
+  }, [tex, specTex, sectTex]);
 
   useEffect(() => () => {
     scene.group.traverse((o) => {
@@ -220,10 +296,11 @@ export function Valley() {
     });
     tex.dispose();
     specTex.dispose();
-  }, [scene, tex, specTex]);
+    sectTex.dispose();
+  }, [scene, tex, specTex, sectTex]);
 
   const s = useRef({
-    t: 0, look: new THREE.Vector3(0, 2, -40), camX: 0, kickAge: 9, kickStr: 0, lastKick: -1, nowB: NOW_MAP, orbY: 2,
+    t: 0, lastHits: -1, look: new THREE.Vector3(0, 2, -40), camX: 0, kickAge: 9, kickStr: 0, lastKick: -1, nowB: NOW_MAP, orbY: 2,
     lift: new Envelope(2.5, 4), leadHit: 0,
   });
 
@@ -263,8 +340,59 @@ export function Valley() {
     const base = Math.floor(camB) - BEHIND_B;
     rows.fill(clock, dd, base);
     spec.fill(clock, dd, base);
+    sect.fill(clock, dd.map, base);
     tex.needsUpdate = true;
     specTex.needsUpdate = true;
+    sectTex.needsUpdate = true;
+
+    // hits at their exact beat positions: from the song map, or recorded live as they happen
+    {
+      const a = scene.instAttr.array as Float32Array;
+      a.fill(0);
+      let n = 0;
+      const lo = base, hi = base + NROWS / RPB;
+      const map = dd.map;
+      const ev = map?.families?.events[F.hits];
+      if (clock.mode === 'map' && map && ev && map.beats.length > 1) {
+        const es = map.families!.eventStrength[F.hits];
+        const tLo = beatTime(map.beats, lo - clock.drift), tHi = beatTime(map.beats, hi - clock.drift);
+        let i = 0, j = ev.length;
+        while (i < j) { const m = (i + j) >> 1; if (ev[m] < tLo) i = m + 1; else j = m; }
+        for (; i < ev.length && ev[i] < tHi && n < MAX_HITS; i++) {
+          const b = beatOf(map.beats, ev[i]) + clock.drift;
+          const side = Math.sin(b * 12.9898) * 43758.5453 % 1 > 0 ? 1 : -1;
+          a.set([b, side, Math.min(1, es[i])], n * 3);
+          n++;
+        }
+      } else {
+        const hits = liveHits.current;
+        if (d.fam.events[F.hits] !== S.lastHits) {
+          S.lastHits = d.fam.events[F.hits];
+          hits.push({ b: clock.pos, s: Math.min(1, 0.3 + d.fam.hit[F.hits]) });
+        }
+        while (hits.length && hits[0].b < lo) hits.shift();
+        for (const h of hits) { if (n >= MAX_HITS) break; a.set([h.b, n % 2 ? 1 : -1, h.s], n * 3); n++; }
+      }
+      scene.instAttr.needsUpdate = true;
+    }
+
+    // gates where sections begin, coloured by the landscape they open onto
+    const secs = clock.mode === 'map' ? dd.map?.sections ?? [] : [];
+    let gi = 0;
+    for (const sec of secs) {
+      if (gi >= GATES) break;
+      const b = sec.startBeat + clock.drift;
+      if (sec.startBeat === 0 || b < camB - 1 || b > base + NROWS / RPB) continue;
+      const gt = scene.gates[gi++];
+      gt.g.visible = true;
+      gt.g.position.set(pathX(b), -2, -(b - camB) * SPACING);
+      const flash = Math.exp(-(((b - clock.pos) * 3) ** 2));
+      const dz = (b - camB) * SPACING;
+      const fog = Math.exp(-Math.max(0, dz) / 120);
+      const near = Math.min(1, Math.max(0, (dz - 4) / 8)); // fade before you pass beneath it
+      gt.m.color.copy(BIOME_COL[sec.biome]).multiplyScalar((0.35 + 1.2 * flash) * fog * near);
+    }
+    for (; gi < GATES; gi++) scene.gates[gi].g.visible = false;
     perf.worldValue = `${clock.mode === 'map' ? 'Song map' : clock.mode === 'live' ? 'Live' : 'Drifting'}, beat ${Math.floor(clock.pos)}`;
 
     if (S.lastKick < 0) S.lastKick = d.fam.events[F.kick];
@@ -286,6 +414,7 @@ export function Valley() {
     gu.uKickAge.value = S.kickAge;
     gu.uKickStr.value = S.kickStr;
     gu.uNowZ.value = -S.nowB * SPACING;
+    (gu.uNowSpec.value as Float32Array).set(d.spec);
     (scene.sky.material as THREE.ShaderMaterial).uniforms.uGlow.value = 0.3 * d.energy + 0.25 * d.fam.level[F.pads];
     const first = Math.ceil((camB - 2) / CURTAIN_EVERY) * CURTAIN_EVERY;
     scene.curtains.forEach((c, i) => {

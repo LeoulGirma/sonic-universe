@@ -329,6 +329,9 @@ function Transport() {
             <div className="seek__track">
               {tr.mapInfo && tr.duration > 0 && (
                 <div className="seek__marks" aria-hidden="true">
+                  {tr.mapInfo.sections.map((s, i) => (
+                    <i key={`s${i}`} className={`mk mk--sec mk--b${s.biome}`} style={{ left: `${(s.start / tr.duration) * 100}%`, width: `${((s.end - s.start) / tr.duration) * 100}%` }} title={`Section ${String.fromCharCode(65 + s.label)}`} />
+                  ))}
                   {tr.mapInfo.breakdowns.map(([a, b], i) => (
                     <i key={`b${i}`} className="mk mk--brk" style={{ left: `${(a / tr.duration) * 100}%`, width: `${((b - a) / tr.duration) * 100}%` }} />
                   ))}
@@ -486,6 +489,10 @@ function SettingsPanel() {
           <Slider label="Resolution limit" value={st.resolutionCap} min={0.35} max={1} onChange={(v) => st.set({ resolutionCap: v })} format={(v) => `${Math.round(v * 100)}%`} />
           <Toggle label="Adapt resolution to hold frame rate" on={st.autoQuality} onChange={(v) => st.set({ autoQuality: v })} />
           <Toggle label="Glow" on={st.bloom} onChange={(v) => st.set({ bloom: v })} />
+          <Slider label="Audio delay (sync)" value={st.syncMs} min={-100} max={400} step={5}
+            onChange={(v) => { st.set({ syncMs: v }); try { localStorage.setItem('sonic.syncMs', String(v)); } catch { /* private mode */ } }}
+            format={(v) => `${v > 0 ? '+' : ''}${Math.round(v)} ms`} />
+          <p className="hint">For song files. Raise it if the visuals land before you hear the beat (TVs and Bluetooth speakers add delay); the browser's own reported delay is already included.</p>
           <Toggle label="Cinematic camera" on={st.cinematic} onChange={(v) => st.set({ cinematic: v })} />
           <Toggle label="Freeze simulation" on={st.frozen} onChange={(v) => st.set({ frozen: v })} />
           <Toggle label="Performance readout" on={st.showPerf} onChange={(v) => st.set({ showPerf: v })} />

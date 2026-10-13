@@ -93,6 +93,7 @@ export interface AppState {
   quality: Quality;
   autoQuality: boolean;
   resolutionCap: number; // max fraction of devicePixelRatio
+  syncMs: number; // extra audio delay to compensate (speakers, TV), on top of what the browser reports
   dpr: number; // live render DPR (adaptive)
   bloom: boolean;
   cinematic: boolean;
@@ -134,6 +135,7 @@ export const useStore = create<AppState>((set) => ({
   quality: isMobile ? 'medium' : 'high',
   autoQuality: true,
   resolutionCap: 1,
+  syncMs: (() => { try { return Number(localStorage.getItem('sonic.syncMs')) || 0; } catch { return 0; } })(),
   dpr: isMobile ? Math.min(maxDpr, 1.5) : maxDpr,
   bloom: true,
   cinematic: typeof window === 'undefined' || !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches,
