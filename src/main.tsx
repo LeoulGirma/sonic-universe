@@ -17,7 +17,8 @@ function App() {
     return (
       <div className="nogl">
         <h1>Sonic Universe needs WebGL 2</h1>
-        <p>Open this page in a current version of Chrome, Edge, Firefox or Safari, and check that hardware acceleration is turned on.</p>
+        <p>The browser would not start 3D graphics. After a display change (a TV or second monitor) or a graphics crash, browsers turn 3D off until they are fully closed: close every browser window and open this page again. Otherwise check that hardware acceleration is on, and close other tabs using 3D.</p>
+        <p><button className="btn btn--primary" onClick={() => location.reload()}>Try again</button></p>
       </div>
     );
   return (

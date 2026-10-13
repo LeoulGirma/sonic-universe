@@ -22,6 +22,22 @@ export function Stage() {
       onCreated={({ gl }) => {
         gl.setClearColor('#000000');
         gl.toneMapping = THREE.NoToneMapping;
+        // a display change (TV, second monitor) or driver reset loses the GPU context, and with it
+        // every simulation texture: offer a reload rather than a frozen black screen
+        gl.domElement.addEventListener('webglcontextlost', (e) => {
+          e.preventDefault();
+          if (document.getElementById('gl-lost')) return;
+          const el = document.createElement('div');
+          el.id = 'gl-lost';
+          el.className = 'gllost glass';
+          el.innerHTML = '<span>The graphics were reset (often after connecting a TV or monitor).</span>';
+          const b = document.createElement('button');
+          b.className = 'btn btn--primary';
+          b.textContent = 'Reload';
+          b.onclick = () => location.reload();
+          el.appendChild(b);
+          document.body.appendChild(el);
+        });
       }}
       style={{ position: 'fixed', inset: 0, touchAction: 'none' }}
     >
