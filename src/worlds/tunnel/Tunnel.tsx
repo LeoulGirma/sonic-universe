@@ -70,7 +70,7 @@ export function Tunnel() {
           uSpacing: { value: 9 }, uRadius: { value: 7 }, uTwist: { value: 0 }, uTwistPhase: { value: 0 },
           uBass: { value: 0 }, uMid: { value: 0 }, uHigh: { value: 0 }, uTime: { value: 0 }, uCurveAmp: { value: 1 },
           uFlash: { value: 0 }, uEnergy: { value: 0 }, uRelease: { value: 0 },
-          uFamTex: { value: famTex }, uFam: { value: FAMILY_INFO.map((f) => new THREE.Color(f.color)) }, uFamDepth: { value: 1 }, uFamGlow: { value: 1 },
+          uFamTex: { value: famTex }, uFam: { value: FAMILY_INFO.map((f) => new THREE.Color(f.color)) }, uFamDepth: { value: 0.55 }, uFamGlow: { value: 0.75 },
           uDeep: { value: new THREE.Color() }, uLine: { value: new THREE.Color() }, uBright: { value: new THREE.Color() }, uAccent: { value: new THREE.Color() },
         },
       }),
@@ -183,12 +183,14 @@ export function Tunnel() {
     const lookTarget = pointer.over && !st.cinematic ? pointer.ndc : new THREE.Vector2(Math.sin(S.t * 0.17) * 0.15, Math.sin(S.t * 0.13) * 0.1);
     S.look.lerp(lookTarget, expCoef(dt, 0.35));
     cam.position.set(S.steer.x, S.steer.y, 0);
-    cam.up.set(Math.sin(S.twistPhase * 0.3) * 0.25, 1, 0).normalize();
+    cam.up.set(0, 1, 0); // no roll: rolling horizons are a strong motion-sickness trigger
     cam.lookAt(S.look.x * 22 + S.steer.x * 0.5, S.look.y * 14 + S.steer.y * 0.5, -40);
 
     const tension = S.tension.step(d.tension, dt);
-    const fov = 70 + 16 * tension + 14 * d.release - 3 * d.pulse - 6 * d.calm;
-    S.fov += (fov - S.fov) * expCoef(dt, d.pulse > 0.4 ? 0.06 : 0.3);
+    // field of view only drifts slowly with the song's sections; zoom pumping on kicks and
+    // build-ups made people queasy
+    const fov = 72 + 4 * tension - 4 * d.calm;
+    S.fov += (fov - S.fov) * expCoef(dt, 2.5);
     if (Math.abs(cam.fov - S.fov) > 0.01) {
       cam.fov = S.fov;
       cam.updateProjectionMatrix();

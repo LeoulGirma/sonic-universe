@@ -5,6 +5,7 @@ import { ParticleLife } from './life/ParticleLife';
 import { LiquidDimension } from './liquid/LiquidDimension';
 import { Tunnel } from './tunnel/Tunnel';
 import { Geometric } from './geometric/Geometric';
+import { Valley } from './valley/Valley';
 
 /**
  * Worlds are plug-ins: a component that reads `drives()` from the frame bus and renders.
@@ -44,5 +45,10 @@ export const WORLDS: WorldDef[] = [
     id: 'tunnel', name: 'The Impossible Tunnel', tagline: 'An infinite tunnel that transforms with every beat', Component: Tunnel,
     headline: 'Play a song. Fly through it.',
     lede: 'You pass one ring on every beat. With a song file, the tunnel ahead shows what is coming: chambers open for breakdowns, walls close in before drops, and every drop is a gate into a new shape. Steer with the arrow keys and look around with the pointer.',
+  },
+  {
+    id: 'valley', name: 'Sound Valley', tagline: 'Fly through a landscape each sound builds', Component: Valley,
+    headline: 'Play a song. Fly through its landscape.',
+    lede: 'Every kind of sound builds its own part of a wide night valley: the bass raises the hills under you, chords and strings hang aurora curtains in the sky, the melody is a glowing path ahead that rises and falls with the tune, snares and claps raise light monoliths along the sides, hi-hats glint in the air, and each kick sends a soft ring across the ground. With a song file, the land ahead is built from what is about to play. Move the pointer to look around.',
   },
 ];

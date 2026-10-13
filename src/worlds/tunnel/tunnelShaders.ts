@@ -154,7 +154,7 @@ export const tunnelVertex = /* glsl */ `
     else if (fam == 5) push = 0.20 * bump;                                        // lead: the ceiling
     else if (fam == 2) push = 0.10 * bump + 0.06 * step(0.5, fract(frac * 9.0)) * bump; // hats: studs
     else push = (0.10 + 0.34 * abs(fract(frac * 4.0) - 0.5) * 2.0) * bump;        // hits: teeth
-    r *= 1.0 - uFamDepth * min(0.6, push * clamp(lev, 0.0, 1.3));
+    r *= 1.0 - uFamDepth * min(0.45, push * clamp(lev, 0.0, 1.3));
 
     vec3 pos = vec3(centre + r * vec2(cos(th), sin(th)), -rel * uSpacing);
     vB = b;
@@ -235,9 +235,9 @@ export const tunnelFragment = /* glsl */ `
     float lane = floor(vTheta / 6.2831853 * 72.0);
     float hl = h11(lane);
     float sCoord = fract(b * 0.2 - uPos * 0.6 - uTime * 0.4 + hl * 13.0);
-    float streak = step(hl, 0.08 + 0.4 * uHigh) * smoothstep(0.0, 0.05, sCoord) * smoothstep(0.35, 0.05, sCoord)
+    float streak = step(hl, 0.04 + 0.16 * uHigh) * smoothstep(0.0, 0.05, sCoord) * smoothstep(0.35, 0.05, sCoord)
                  * line(vTheta / 6.2831853 * 72.0, 0.08) * (0.3 + 1.0 * uHigh);
-    col += uBright * streak * 0.7;
+    col += uBright * streak * 0.4;
 
     float crossing = exp(-pow((b - uPos) * 3.0, 2.0));
     col += uBright * uFlash * crossing * (beatRing * 3.0 + 0.3);

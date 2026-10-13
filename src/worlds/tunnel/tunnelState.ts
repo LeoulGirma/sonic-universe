@@ -169,12 +169,19 @@ function smooth(a: Float32Array, passes: number) {
  * mean. Live, rows record what was playing as you pass them; the tunnel ahead shows the current mix.
  */
 export class FamilyRows {
-  readonly data = new Float32Array(FAM_ROWS * 2 * 4);
+  readonly data: Float32Array<ArrayBuffer>;
   private hist = new Map<number, Float32Array>(); // live: absolute row → 8 values
   private melody = 0.3;
 
-  fill(clock: TunnelClock, d: Drives) {
-    const base = clock.base();
+  /** @param rpb rows per beat  @param nRows rows in the window (texture width) */
+  constructor(readonly rpb = ROWS_PER_BEAT, readonly nRows = FAM_ROWS) {
+    this.data = new Float32Array(nRows * 2 * 4);
+  }
+
+  /** @param base whole beat of row 0 */
+  fill(clock: TunnelClock, d: Drives, base = clock.base()) {
+    const ROWS_PER_BEAT = this.rpb;
+    const FAM_ROWS = this.nRows;
     const map = d.map;
     const tr = map?.families;
     const out = this.data;

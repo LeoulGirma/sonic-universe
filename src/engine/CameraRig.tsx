@@ -76,8 +76,9 @@ export function CameraRig() {
     () =>
       useStore.subscribe((s, prev) => {
         if (s.world === prev.world) return;
-        if (prev.world === 'tunnel' || s.world === 'tunnel') {
-          // leaving the tunnel: restore the orbit view; entering it: the world takes over
+        const owns = (w: string) => w === 'tunnel' || w === 'valley';
+        if (owns(prev.world) || owns(s.world)) {
+          // leaving a world that flies the camera itself: restore the orbit view; entering it: the world takes over
           controls.target.set(0, 0, 0);
           cam.up.set(0, 1, 0);
           cam.position.set(0, 34, 70).multiplyScalar(scaleOf(s.world));

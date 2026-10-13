@@ -111,6 +111,12 @@ One procedural tube (64–192 segments around, 8 rows per beat), positioned enti
 
 **Sounds own the walls.** Around the tube each sound family holds a band of wall, from the floor counter-clockwise: bass (floor), kick, pads, melody (ceiling), hats, hits. A band's width grows faster than its loudness, so a loud sound crowds the quiet ones out, and it pushes into the tunnel by its loudness, each with its own shape: the bass a smooth rising floor, pads broad walls (tinted by the harmony), hits jagged teeth, hats a twinkling studded strip, the kick a solid red slab, and the melody a bright line along the ceiling that follows its pitch. Levels come per row, one row per 32nd note, through a float texture; with a song map each row reads the song at its own time, so a snare is a ridge that reaches you exactly as it sounds and the walls ahead show what is about to play. Live, rows record what was playing as you pass them and the tunnel ahead shows the current mix. Checked on F1 at 0:22 (violet bass floor and orange hits, little else), 1:04 and 1:44 (all six bands, teal pad walls widest) and 2:30 (the bass floor takes over, no hats).
 
+## World F: Sound Valley
+
+Built after the tunnel proved tiring to watch (tight space, zoom pumping, full-screen colour). You travel forward through the song over a wide night valley with a horizon; each sound family builds its own part of the landscape: the **bass** raises hills (mostly on the slopes, so the path stays open) under Unknown-Pleasures-style ridgelines, one per beat; each **kick** sends a soft ring across the ground; **pads** hang aurora curtains in the sky, taller when louder and tinted by the chord; the **melody** is a glowing path ahead, below eye level, that rises and falls with the tune; **hits** raise light monoliths along the sides on their onsets, taller for louder hits; **hats** make the air glint, more of it when louder. With a song map the land ahead is built from what the song is about to play (16th-note rows, 72 beats ahead), anchored to absolute beats so nothing swims.
+
+Comfort rules: about a quarter of the tunnel's speed (2.4 units per beat), a fixed field of view, no camera roll, light on darkness, no full-screen flashes or streaks. The tunnel also lost its zoom pumping and roll, and its walls push in less.
+
 ## World B: Liquid Dimension
 
 A convincing GPU approximation, not fluid dynamics (as the brief allows). Two layers:

@@ -15,7 +15,7 @@ export function PostFX() {
     if (!b) return;
     const d = drives();
     const st = useStore.getState();
-    const k = st.world === 'life' ? st.lifeParams.bloom : st.world === 'liquid' ? st.liquidParams.bloom : st.world === 'tunnel' ? st.tunnelParams.bloom : st.params.bloom;
+    const k = st.world === 'life' ? st.lifeParams.bloom : st.world === 'liquid' ? st.liquidParams.bloom : st.world === 'tunnel' ? st.tunnelParams.bloom : st.world === 'valley' ? 0.8 : st.params.bloom;
     // chrome is bright everywhere: only its highlights should bloom
     b.luminanceMaterial.threshold = st.world === 'liquid' ? 0.55 : 0.12;
     b.intensity = k * (0.85 + 0.55 * d.energy + 0.35 * d.pulse + 0.9 * d.release + 0.25 * d.idle);

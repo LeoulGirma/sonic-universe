@@ -208,7 +208,7 @@ export function Overlay() {
           <h1 className="welcome__title">{world.headline ?? 'Play a song.'}</h1>
           <p className="welcome__lede">
             {world.lede}{' '}
-            {st.world === 'tunnel' ? '' : st.world === 'geometric' ? (IS_MOBILE ? 'Drag to orbit.' : 'Drag the view to orbit.') : (() => {
+            {st.world === 'tunnel' || st.world === 'valley' ? '' : st.world === 'geometric' ? (IS_MOBILE ? 'Drag to orbit.' : 'Drag the view to orbit.') : (() => {
               const thing = { cosmic: 'stars', life: 'particles', liquid: 'the liquid' }[st.world as 'cosmic' | 'life' | 'liquid'] ?? 'it';
               return IS_MOBILE ? `Drag to orbit; press and hold to pull ${thing} toward your finger.` : `Drag the view to orbit; hover to pull ${thing} toward your cursor.`;
             })()}
@@ -492,12 +492,12 @@ function SettingsPanel() {
         </div>
       ) : (
         <div className="panel__body">
-          {st.world === 'geometric' ? (
+          {st.world === 'geometric' || st.world === 'valley' ? (
             <>
               <p className="hint">The music is separated into six kinds of sound by how they behave, not by a trained instrument model: hits are short and broadband, held notes are steady in time, melodies move. Each builds its own structure.</p>
               <dl className="famlist">
                 {FAMILY_INFO.map((f, k) => (
-                  <div key={f.id}><dt><i style={{ background: f.color }} />{f.name}</dt><dd>{GEO_ROLE[k]}<small>{f.examples}</small></dd></div>
+                  <div key={f.id}><dt><i style={{ background: f.color }} />{f.name}</dt><dd>{(st.world === 'valley' ? VALLEY_ROLE : GEO_ROLE)[k]}<small>{f.examples}</small></dd></div>
                 ))}
               </dl>
             </>
@@ -534,8 +534,8 @@ function SettingsPanel() {
               ))}
             </>
           )}
-          {st.world !== 'geometric' && <h3>Music mapping</h3>}
-          {st.world !== 'geometric' && (['bass', 'mid', 'high', 'kick'] as const).map((k) => (
+          {st.world !== 'geometric' && st.world !== 'valley' && <h3>Music mapping</h3>}
+          {st.world !== 'geometric' && st.world !== 'valley' && (['bass', 'mid', 'high', 'kick'] as const).map((k) => (
             <Slider key={k} label={(st.world === 'tunnel'
               ? { bass: 'Bass → wall glow and breathing', mid: 'Mids → twist', high: 'Highs → light streaks', kick: 'Kicks → ring flashes' }
               : st.world === 'liquid'
@@ -545,13 +545,22 @@ function SettingsPanel() {
               : { bass: 'Bass → gravity', mid: 'Mids → spiral flow', high: 'Highs → star light', kick: 'Kicks → shockwaves' })[k]}
               value={st.gains[k]} min={0} max={3} onChange={(v) => st.setGain(k, v)} format={(v) => `${Math.round(v * 100)}%`} />
           ))}
-          {st.world !== 'geometric' && <button className="btn btn--quiet" onClick={() => st.resetExperiment()}>Reset to defaults</button>}
-          {st.world !== 'geometric' && <p className="hint">Changes apply live; the particle count lives under Settings.</p>}
+          {st.world !== 'geometric' && st.world !== 'valley' && <button className="btn btn--quiet" onClick={() => st.resetExperiment()}>Reset to defaults</button>}
+          {st.world !== 'geometric' && st.world !== 'valley' && <p className="hint">Changes apply live; the particle count lives under Settings.</p>}
         </div>
       )}
     </aside>
   );
 }
+
+const VALLEY_ROLE = [
+  'Sends a soft ring across the ground on every kick.',
+  'Raises light monoliths along the sides; louder hits stand taller.',
+  'Makes the air glint; louder hats light more of it.',
+  'Raises the hills under you; the ridgelines mark the beats.',
+  'Hang aurora curtains in the sky, taller when louder, coloured by the chord.',
+  'Draws the glowing path ahead at the melody\'s pitch.',
+];
 
 const GEO_ROLE = [
   'Pulses the core and sends a shell outward on every kick.',
