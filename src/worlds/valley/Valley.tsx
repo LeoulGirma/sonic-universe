@@ -31,7 +31,7 @@ const BEHIND_B = 2; // rows kept behind the camera
 const AHEAD_B = 74; // visible ahead of the camera
 const NROWS = (BEHIND_B + AHEAD_B) * RPB + 2;
 const SPACING = 2.4;
-const X_SEG = 180;
+const X_SEG = 260;
 const CURTAINS = 6;
 const CURTAIN_EVERY = 16;
 const DUST_PER_ROW = 6;
@@ -111,8 +111,8 @@ class SpecRows {
         const off = t0 > map.duration ? 0 : 1;
         for (let k = 0; k < SPEC_BANDS; k++) {
           let v = 0;
-          for (let j = j0; j < j1; j++) v = Math.max(v, sp.data[j * SPEC_BANDS + k]);
-          out[k * NROWS + r] = (off * v) / 255;
+          for (let j = j0; j < j1; j++) v += sp.data[j * SPEC_BANDS + k];
+          out[k * NROWS + r] = (off * v) / (j1 - j0) / 255; // the mean over the 16th, not its spike
         }
       }
       return;

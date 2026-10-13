@@ -48,11 +48,27 @@ export const valleyShared = /* glsl */ `
     return mix(texelFetch(uFamTex, ivec2(r, 1), 0), texelFetch(uFamTex, ivec2(r + 1, 1), 0), fract(row));
   }
   // spectrum of a row at u across the bands (0 = 40 Hz … 1 = 10 kHz)
-  float specAt(float row, float u) {
-    int r = int(clamp(floor(row + 0.5), 0.0, float(NROWS) - 1.0));
-    float bf = clamp(u, 0.0, 1.0) * 31.0;
+  float specRaw(int r, float bf) {
     int k = int(floor(bf));
     return mix(texelFetch(uSpecTex, ivec2(r, k), 0).r, texelFetch(uSpecTex, ivec2(r, min(k + 1, 31)), 0).r, fract(bf));
+  }
+  // spectrum of a row at u across the bands (0 = 40 Hz … 1 = 10 kHz), smoothed over neighbouring
+  // rows and bands so the ridges flow instead of stepping from one 16th note to the next
+  float specAt(float row, float u) {
+    row = clamp(row, 1.0, float(NROWS) - 2.001);
+    float bf = clamp(u, 0.0, 1.0) * 31.0;
+    float b0 = max(bf - 1.0, 0.0), b1 = min(bf + 1.0, 31.0);
+    int r = int(floor(row));
+    float f = fract(row);
+    float acc = 0.0;
+    for (int dr = -1; dr <= 2; dr++) {
+      // cubic-ish weights over rows r-1 … r+2, centred on the fractional row
+      float d = abs(float(dr) - f);
+      float w = d < 1.0 ? 1.0 - 1.5 * d * d + 0.75 * d * d * d : 0.25 * pow(2.0 - d, 3.0);
+      int rr = clamp(r + dr, 0, NROWS - 1);
+      acc += w * (0.25 * specRaw(rr, b0) + 0.5 * specRaw(rr, bf) + 0.25 * specRaw(rr, b1));
+    }
+    return acc;
   }
   // the winding route through the valley (absolute beats → stable); the camera follows it
   float pathX(float b) { return 9.0 * sin(b * 0.045) + 4.0 * sin(b * 0.017 + 1.0); }
