@@ -25,6 +25,7 @@ export const valleyShared = /* glsl */ `
   uniform float uBase;     // whole beat of row 0
   uniform float uSpacing;  // scene units per beat
   uniform float uTime;
+  uniform float uNowSpec[32]; // the spectrum at the exact moment you hear
 
   float hash12(vec2 p) {
     vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -57,6 +58,13 @@ export const valleyShared = /* glsl */ `
   float pathX(float b) { return 9.0 * sin(b * 0.045) + 4.0 * sin(b * 0.017 + 1.0); }
   float zOf(float b) { return -(b - uCam) * uSpacing; }
   float uAcross(float ax) { return clamp((ax - 7.0) / 72.0, 0.0, 1.0); }
+  float nowSpec(float u) {
+    float bf = clamp(pow(u, 0.85), 0.0, 1.0) * 31.0;
+    int k = int(floor(bf));
+    return mix(uNowSpec[k], uNowSpec[min(k + 1, 31)], fract(bf));
+  }
+  // land is DORMANT ahead of the now line (a low preview) and comes alive as the music reaches it
+  float activation(float b) { return smoothstep(uPos + 0.25, uPos - 1.5, b); }
   vec4 sectW(float row) {
     row = clamp(row, 0.0, float(NROWS) - 1.001);
     int r = int(floor(row));
@@ -76,14 +84,27 @@ export const valleyShared = /* glsl */ `
     float edge = smoothstep(6.0, 16.0, ax);                 // the route itself stays flat and open
     float amp = (1.6 + 3.2 * (1.0 - u) + 2.5 * smoothstep(0.3, 1.0, u)) * edge;
     float n = vnoise(vec2(cx * 0.07 + seed * 37.0, lb * 0.5 + seed * 11.0));
-    float dunes = s * amp * (0.7 + 0.6 * n);
+    // dunes: broad swells, the spectrum riding on them
+    float swell = vnoise(vec2(cx * 0.025 + seed * 7.0, lb * 0.12 + seed * 3.0));
+    float dunes = (swell * 5.0 * smoothstep(8.0, 40.0, ax) + s * amp * (0.6 + 0.5 * n)) * edge;
+    // mountains: sharp ridged peaks rising toward the sides
     float rn = 1.0 - abs(vnoise(vec2(cx * 0.05 + seed * 13.0, lb * 0.18 + seed * 5.0)) * 2.0 - 1.0);
-    float mountains = (pow(rn, 3.0) * (2.0 + 26.0 * smoothstep(14.0, 95.0, ax)) + s * amp * 0.7) * edge;
-    float lake = s * 0.45 * edge * (0.4 + 0.6 * n);
-    float sp = s * amp * 1.2 + 7.0 * pow(vnoise(vec2(cx * 0.16 + seed * 3.0, lb * 0.9 + seed)), 3.0) * smoothstep(10.0, 60.0, ax);
-    float spires = floor(sp / 1.4) * 1.4 * edge;
+    float mountains = (pow(rn, 3.0) * (3.0 + 30.0 * smoothstep(14.0, 95.0, ax)) + s * amp * 0.8) * edge;
+    // lake: almost flat; the kick ripples do the talking
+    float lake = s * 0.35 * edge * (0.4 + 0.6 * n);
+    // spires: a city of towers, each one a frequency band's level over an 8th note
+    float cw = 3.2;
+    float cxi = (floor(cx / cw) + 0.5) * cw;
+    float rcell = (floor(row / 2.0) + 0.5) * 2.0;
+    float lot = hash12(vec2(floor(cx / cw) + seed * 17.0, floor((lb * 4.0) / 2.0)));
+    float tower = specAt(rcell, pow(uAcross(abs(cxi)), 0.85)) * (6.0 + 12.0 * smoothstep(10.0, 70.0, ax)) * step(0.3, lot);
+    float spires = tower * smoothstep(9.0, 14.0, ax);
+    float form = dot(W, vec4(dunes, mountains, lake, spires));
+    // dormant ahead, alive behind the now line, and breathing with the sound right around it
+    float act = activation(b);
+    float breathe = act * exp(-max(uPos - b, 0.0) / 2.5) * nowSpec(u) * amp * 0.6;
     float valley = 14.0 * smoothstep(16.0, 115.0, ax) * (1.0 - 0.7 * W.z);
-    return -2.0 + valley + dot(W, vec4(dunes, mountains, lake, spires));
+    return -2.0 + valley + form * mix(0.18, 1.0, act) + breathe;
   }
   float nowGlow(float b) { float d = (b - uPos) * float(RPB) * 1.1; return exp(-d * d); }
 `;
@@ -113,7 +134,7 @@ export const groundVertex = /* glsl */ `
     float d = length(vec2(x - pathX(uPos), z - uNowZ));
     float R = uKickAge * 38.0;
     float wave = exp(-pow((d - R) / 5.0, 2.0)) * pow(max(0.0, 1.0 - uKickAge / 1.4), 2.0) * uKickStr;
-    y += wave * 1.4 * smoothstep(2.0, 10.0, ax);
+    y += wave * (1.4 + 1.6 * sectW(row).z) * smoothstep(2.0, 10.0, ax);
     vB = b; vU = uAcross(ax); vS = specAt(row, pow(vU, 0.85)); vZ = -z; vRing = wave; vW = sectW(row); vH = y;
     gl_Position = projectionMatrix * viewMatrix * vec4(x, y, z, 1.0);
   }
@@ -126,7 +147,6 @@ export const groundFragment = /* glsl */ `
   uniform vec3 uHatsCol;
   uniform vec3 uKickCol;
   uniform vec3 uHorizon;
-  uniform float uNowSpec[32];   // the spectrum at the exact moment you hear (not the 16th-note rows)
   varying float vB;
   varying float vU;
   varying float vS;
@@ -134,11 +154,6 @@ export const groundFragment = /* glsl */ `
   varying float vRing;
   varying vec4 vW;
   varying float vH;
-  float nowSpec(float u) {
-    float bf = clamp(pow(u, 0.85), 0.0, 1.0) * 31.0;
-    int k = int(floor(bf));
-    return mix(uNowSpec[k], uNowSpec[min(k + 1, 31)], fract(bf));
-  }
   void main() {
     // a ridgeline every 16th note, the beats stronger; antialiased, let go where too dense
     float rb = vB * float(RPB);
@@ -150,7 +165,12 @@ export const groundFragment = /* glsl */ `
     float ridge = (1.0 - smoothstep(lw, lw + 1.5 * w, d)) * (1.0 - smoothstep(0.3, 0.55, w));
     // colour across the valley follows the spectrum: bass violet by the path, mids teal, highs gold
     vec3 tint = vU < 0.4 ? mix(uBassCol, uPadsCol, smoothstep(0.1, 0.4, vU)) : mix(uPadsCol, uHatsCol, smoothstep(0.45, 0.85, vU));
-    float past = vB < uPos ? 0.45 : 1.0;
+    // each landscape has its own light: dunes violet-rose, mountains ice, lake deep blue, spires gold
+    vec3 biomeTint = vW.x * vec3(0.75, 0.45, 1.0) + vW.y * vec3(0.75, 1.0, 0.98) + vW.z * vec3(0.3, 0.55, 1.0) + vW.w * vec3(1.0, 0.72, 0.3);
+    tint = mix(tint, biomeTint, 0.45);
+    // ahead: a dim preview sketch; behind the now line: alive, fading slowly back toward you
+    float act = activation(vB);
+    float past = mix(0.32, 0.55 + 0.6 * exp(-max(uPos - vB, 0.0) / 10.0), act);
     float energy = 0.08 + 1.25 * vS * vS;
     // landscapes: a lake is calm and mirror-like, mountains catch light on their crests,
     // spires glow along their terraces
@@ -161,7 +181,7 @@ export const groundFragment = /* glsl */ `
     col += uHatsCol * vW.w * smoothstep(0.85, 1.0, fract(vH / 1.4)) * 0.25 * past;
     // the now line: what is sounding at this exact moment lights up as it crosses
     col += mix(tint, vec3(1.0), 0.35) * nowGlow(vB) * (0.2 + 1.7 * nowSpec(vU)) * (0.4 + ridge);
-    col += uKickCol * vRing * (0.1 + 0.6 * ridge);
+    col += uKickCol * vRing * (0.1 + 0.6 * ridge) * (1.0 + 1.5 * vW.z);
     float fog = 1.0 - exp(-max(vZ, 0.0) / 115.0);
     col = mix(col, uHorizon, fog);
     gl_FragColor = vec4(col, 1.0);

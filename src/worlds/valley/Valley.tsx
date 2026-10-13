@@ -35,7 +35,7 @@ const X_SEG = 180;
 const CURTAINS = 6;
 const CURTAIN_EVERY = 16;
 const DUST_PER_ROW = 6;
-const NOW_MAP = 5.5; // beats between the camera and the now line, with a song map
+const NOW_MAP = 13; // beats between the camera and the now line, with a song map (mid-screen)
 const NOW_LIVE = 50; // live: the land is made near the horizon and flows toward you
 
 const MAX_HITS = 512;
@@ -158,11 +158,12 @@ export function Valley() {
   const liveHits = useRef<{ b: number; s: number }[]>([]);
   const lastDrives = useRef<Drives | null>(null);
 
+  const nowSpec = useMemo(() => new Float32Array(32), []);
   const scene = useMemo(() => {
     const defines = { RPB, NROWS };
     const common = () => ({
       uFamTex: { value: tex }, uSpecTex: { value: specTex }, uSectTex: { value: sectTex }, uPos: { value: 0 }, uCam: { value: 0 }, uBase: { value: 0 },
-      uSpacing: { value: SPACING }, uTime: { value: 0 },
+      uSpacing: { value: SPACING }, uTime: { value: 0 }, uNowSpec: { value: nowSpec },
     });
     const horizon = new THREE.Color('#120d2a');
     const vRows = (BEHIND_B + AHEAD_B) * RPB + 1;
@@ -189,7 +190,6 @@ export function Valley() {
       uniforms: {
         ...common(), uBassCol: { value: COL[F.bass] }, uPadsCol: { value: COL[F.pads] }, uHatsCol: { value: COL[F.hats] },
         uKickCol: { value: COL[F.kick] }, uHorizon: { value: horizon }, uKickAge: { value: 9 }, uKickStr: { value: 0 }, uNowZ: { value: 0 },
-        uNowSpec: { value: new Float32Array(32) },
       },
     }));
     ground.frustumCulled = false;
@@ -286,7 +286,7 @@ export function Valley() {
     group.add(sky, ground, ...curtains, monos, path, dust, orb, ...gates.map((x) => x.g));
     const mats = [ground, ...curtains, path, monos, dust].map((m) => m.material as THREE.ShaderMaterial);
     return { group, ground, sky, curtains, path, orb, halo, monos, instAttr, gates, dust, mats, vertsTotal: gk.length / 2 };
-  }, [tex, specTex, sectTex]);
+  }, [tex, specTex, sectTex, nowSpec]);
 
   useEffect(() => () => {
     scene.group.traverse((o) => {
@@ -414,7 +414,7 @@ export function Valley() {
     gu.uKickAge.value = S.kickAge;
     gu.uKickStr.value = S.kickStr;
     gu.uNowZ.value = -S.nowB * SPACING;
-    (gu.uNowSpec.value as Float32Array).set(d.spec);
+    nowSpec.set(d.spec);
     (scene.sky.material as THREE.ShaderMaterial).uniforms.uGlow.value = 0.3 * d.energy + 0.25 * d.fam.level[F.pads];
     const first = Math.ceil((camB - 2) / CURTAIN_EVERY) * CURTAIN_EVERY;
     scene.curtains.forEach((c, i) => {
@@ -429,7 +429,7 @@ export function Valley() {
     S.leadHit = Math.max(S.leadHit * Math.exp(-dt / 0.18), d.fam.hit[F.lead]);
     S.orbY += (melodyY(d.fam.melody) + 0.15 - S.orbY) * expCoef(dt, 0.06);
     scene.orb.position.set(pathX(clock.pos), S.orbY, -S.nowB * SPACING);
-    scene.orb.scale.setScalar(0.5 + 1.1 * lead + 0.9 * S.leadHit);
+    scene.orb.scale.setScalar(0.9 + 1.6 * lead + 1.2 * S.leadHit);
     (scene.orb.material as THREE.MeshBasicMaterial).opacity = Math.min(1, 0.15 + 1.2 * lead);
     (scene.halo.material as THREE.MeshBasicMaterial).opacity = 0.08 + 0.3 * lead + 0.3 * S.leadHit;
 
