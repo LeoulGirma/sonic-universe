@@ -1,0 +1,5 @@
+node_modules
+dist
+dist-single
+sonic-universe.html
+*.log
