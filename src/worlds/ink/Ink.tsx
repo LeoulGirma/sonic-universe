@@ -11,6 +11,7 @@ import { cameraOwner, drives, perf, pointer } from '../../engine/frameBus';
 import { Spring } from '../../audio/dsp';
 import type { Drives } from '../../mapping/drives';
 import { debugEnabled, registerExtras, registerSim, registerStepper } from '../../engine/debug';
+import { conductor } from '../../mapping/conductor';
 
 /**
  * World G — Ink in Water. A real 2D fluid (stable fluids on the GPU); every kind of sound injects
@@ -33,7 +34,10 @@ export const INK_Q: Record<Quality, { sim: number; dye: number; iters: number }>
   ultra: { sim: 224, dye: 1440, iters: 26 },
 };
 
-const COL = FAMILY_INFO.map((f) => new THREE.Color(f.color));
+const BASE_COL = FAMILY_INFO.map((f) => new THREE.Color(f.color));
+/** the family colours as poured right now (recoloured into the song's palette with song mood on) */
+const COL = BASE_COL.map((c) => c.clone());
+const WATER = new THREE.Color('#05061a');
 
 interface DoubleFBO { read: THREE.WebGLRenderTarget; write: THREE.WebGLRenderTarget; swap: () => void; texel: THREE.Vector2 }
 
@@ -103,7 +107,7 @@ export function Ink() {
   useEffect(() => () => { display.geometry.dispose(); (display.material as THREE.Material).dispose(); }, [display]);
 
   const st = useRef({
-    t: 0, lastEv: new Array(NF).fill(-1), lastDrop: -1, lastSection: -1, track: -1, seed: 1,
+    t: 0, lastEv: new Array(NF).fill(-1), lastDrop: -1, lastBurst: -1, buildAcc: 0, lastSection: -1, track: -1, seed: 1,
     lv: Array.from({ length: NF }, () => new Spring()), mel: new Spring(0.3), bassPhase: 0,
     leadPrev: new THREE.Vector2(0.5, 0.5), ptrPrev: new THREE.Vector2(), ptrDown: false,
   });
@@ -140,8 +144,32 @@ export function Ink() {
       if (d.track !== S.track) { S.track = d.track; S.lastEv = [...fam.events]; S.lastDrop = d.dropEvents; }
       const fired = (k: number) => { const n = fam.events[k] !== S.lastEv[k]; S.lastEv[k] = fam.events[k]; return n; };
       // phrase timescale: smooth levels (springs), slow emitter drift
-      const lv = S.lv.map((s, k) => s.step(fam.level[k], dt, k <= F.hats ? 4 : 1.2));
+      const C = conductor, G = C.look.gain;
+      for (let k = 0; k < NF; k++) C.grade(BASE_COL[k], COL[k]);
+      // how much each part pours follows what the song is built around (song mood)
+      const gain = [G.groove, G.groove, G.groove, G.bass, G.space, G.melody].map((g) => Math.min(1.7, g));
+      const lv = S.lv.map((s, k) => s.step(fam.level[k], dt, k <= F.hats ? 4 : 1.2) * gain[k]);
       const live = 1 - d.idle;
+      // a build draws the ink inward in a tightening spiral; the drop bursts it out from the centre
+      S.buildAcc += dt * (1 + 6 * C.build);
+      if (C.build > 0.12 && live > 0.5 && S.buildAcc > 0.25) {
+        S.buildAcc = 0;
+        const n = 6, sp = 260 + 700 * C.build;
+        for (let i = 0; i < n; i++) {
+          const a = (i / n) * Math.PI * 2 + S.t * (0.6 + 2 * C.build);
+          const r = 0.42 - 0.22 * C.build;
+          splat(0.5 + (r * Math.cos(a)) / sim.aspect, 0.5 + r * Math.sin(a), (-Math.cos(a) * 0.6 - Math.sin(a)) * sp, (-Math.sin(a) * 0.6 + Math.cos(a)) * sp, COL[i % NF], 0.02 * C.build, 0.006);
+        }
+      }
+      if (S.lastBurst < 0) S.lastBurst = d.dropEvents;
+      if (d.dropEvents !== S.lastBurst && live > 0.5) {
+        S.lastBurst = d.dropEvents;
+        const k = Math.min(1.6, G.arc);
+        for (let i = 0; i < 16; i++) {
+          const a = (i / 16) * Math.PI * 2;
+          splat(0.5, 0.5, Math.cos(a) * 1600 * k, Math.sin(a) * 1600 * k, COL[i % NF], 0.08 * k, 0.004);
+        }
+      }
 
       // bass: a slow whirlpool low in the tank
       S.bassPhase += dt * (0.25 + 0.5 * lv[F.bass]);
@@ -276,6 +304,7 @@ export function Ink() {
       S.ptrDown = true;
     } else S.ptrDown = false;
     const u = (display.material as THREE.ShaderMaterial).uniforms;
+    (u.uWater.value as THREE.Color).copy(WATER).lerp(conductor.look.bg, conductor.look.amt * 0.8);
     u.uDye.value = sim.dye.read.texture;
     u.dyeTexel.value.set(1 / sim.dye.read.width, 1 / sim.dye.read.height);
   });

@@ -399,7 +399,7 @@ const LEAD_WORD = { bass: 'bass-led', groove: 'groove-led', melody: 'melody-led'
 function moodWord(m: SongMood) {
   return m.bright >= 0.5 ? (m.energy >= 0.5 ? 'Euphoric' : 'Glowing') : (m.energy >= 0.5 ? 'Fierce' : 'Brooding');
 }
-const MOOD_WORLDS = ['valley'];
+const MOOD_WORLDS = ['valley', 'geometric', 'tunnel', 'ink'];
 
 function Transport() {
   const tr = useTransport();

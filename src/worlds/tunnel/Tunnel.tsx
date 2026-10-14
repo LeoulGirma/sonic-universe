@@ -13,6 +13,9 @@ import { keys } from '../../engine/CameraRig';
 import { Envelope, expCoef } from '../../audio/dsp';
 import type { Drives } from '../../mapping/drives';
 import { debugEnabled, registerExtras, registerSim, registerStepper } from '../../engine/debug';
+import { conductor } from '../../mapping/conductor';
+
+const FAM_COL = FAMILY_INFO.map((f) => new THREE.Color(f.color));
 
 
 /**
@@ -78,14 +81,7 @@ export function Tunnel() {
   );
   useEffect(() => () => { geo.dispose(); mat.dispose(); famTex.dispose(); }, [geo, mat, famTex]);
 
-  useEffect(() => {
-    const pal = paletteVec3(paletteId);
-    const u = mat.uniforms;
-    u.uDeep.value.copy(pal.c[1]);
-    u.uLine.value.copy(pal.c[2]);
-    u.uBright.value.copy(pal.c[3]);
-    u.uAccent.value.copy(pal.accent);
-  }, [paletteId, mat]);
+  const pal = useMemo(() => paletteVec3(paletteId), [paletteId]);
 
   const bgGeo = useMemo(() => new THREE.PlaneGeometry(2, 2), []);
   const bgMat = useMemo(
@@ -150,6 +146,17 @@ export function Tunnel() {
     S.flash *= Math.exp(-dt / 0.12);
 
     const u = mat.uniforms;
+    // colours: the app palette, recoloured into the song's palette with song mood on
+    {
+      const C = conductor, L = C.look, a = L.amt;
+      u.uDeep.value.copy(pal.c[1]).lerp(L.lo.clone().multiplyScalar(0.5), a);
+      u.uLine.value.copy(pal.c[2]).lerp(L.lo.clone().lerp(L.hi, 0.45), a);
+      u.uBright.value.copy(pal.c[3]).lerp(L.hi, a);
+      u.uAccent.value.copy(pal.accent).lerp(L.hi, a);
+      const fc = u.uFam.value as THREE.Color[];
+      for (let k = 0; k < fc.length; k++) C.grade(FAM_COL[k], fc[k]);
+      u.uFamGlow.value = 0.75 * Math.min(1.4, 0.5 + 0.5 * L.gain.groove);
+    }
     u.uPos.value = clock.pos;
     u.uBase.value = clock.base();
     u.uSpacing.value = tp.spacing;

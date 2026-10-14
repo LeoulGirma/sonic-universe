@@ -7,6 +7,12 @@ import { F, FAMILY_INFO } from '../../audio/soundFamilies';
 import { useStore } from '../../store/useStore';
 import { drives, perf } from '../../engine/frameBus';
 import { debugEnabled, registerExtras, registerSim, registerStepper } from '../../engine/debug';
+import { conductor } from '../../mapping/conductor';
+import { Spring } from '../../audio/dsp';
+
+// each kind of section gets its own formation: tilt of the whole architecture (x, z) and the
+// lattice's reach; the same kind of section returns to the same formation
+const FORMATIONS: [number, number, number][] = [[0, 0, 1], [0.38, 0.12, 1.16], [-0.3, 0.42, 0.9], [0.16, -0.4, 1.24], [0.5, 0.18, 1.06]];
 
 const COL = FAMILY_INFO.map((f) => new THREE.Color(f.color));
 const additive = { transparent: true, depthWrite: false, blending: THREE.AdditiveBlending } as const;
@@ -177,6 +183,12 @@ export function Geometric() {
   }, [S]);
 
   const tmp = useMemo(() => ({ m: new THREE.Matrix4(), q: new THREE.Quaternion(), v: new THREE.Vector3(), s: new THREE.Vector3(), c: new THREE.Color(), axis: new THREE.Vector3() }), []);
+  // the song's colours (song mood) and the slower, eased structure: formation per section,
+  // contraction through a build, a release on the drop, opening out in a breakdown
+  const look = useMemo(() => ({
+    col: COL.map((c) => c.clone()),
+    tiltX: new Spring(), tiltZ: new Spring(), reach: new Spring(1), scale: new Spring(1), spin: 0,
+  }), []);
 
   useFrame((_, dt) => {
     const d = drives();
@@ -184,7 +196,16 @@ export function Geometric() {
     if (!st.frozen) S.step(dt, d);
     const lv = d.fam.level;
     const P = parts;
-    P.arch.rotation.y = S.rotY;
+    const C = conductor;
+    const G = C.look.gain;
+    const gc = look.col;
+    for (let k = 0; k < gc.length; k++) C.grade(COL[k], gc[k]);
+    const [fx, fz, reach] = FORMATIONS[C.section >= 0 ? C.sectionLabel % FORMATIONS.length : 0];
+    look.spin += dt * (0.5 * C.build + 0.9 * C.drop * G.arc);
+    P.arch.rotation.set(look.tiltX.step(fx, dt, 0.6), S.rotY + look.spin, look.tiltZ.step(fz, dt, 0.6));
+    // a build draws everything in; the drop throws it out; a breakdown lets it open and drift
+    const archS = look.scale.step(1 - 0.16 * C.build + 0.22 * C.drop * G.arc + 0.08 * C.calm, dt, 2.5);
+    P.arch.scale.setScalar(archS);
     P.lattice.rotation.y = S.latticeRot;
     P.lattice.rotation.x = 0.25;
 
@@ -193,6 +214,8 @@ export function Geometric() {
     P.coreFill.scale.setScalar(S.core);
     P.coreLine.rotation.y = S.t * 0.3;
     P.coreFill.rotation.y = S.t * 0.3;
+    (P.coreLine.material as THREE.LineBasicMaterial).color.copy(gc[F.kick]);
+    (P.coreFill.material as THREE.MeshBasicMaterial).color.copy(gc[F.kick]);
     (P.coreLine.material as THREE.LineBasicMaterial).opacity = 0.22 + 0.78 * Math.min(1, lv[F.kick] + S.coreFlash) + 0.3 * d.idle;
     (P.coreFill.material as THREE.MeshBasicMaterial).opacity = 0.12 + 0.5 * S.coreFlash + 0.25 * S.dropFlash;
     S.shells.forEach((sh, i) => {
@@ -202,11 +225,12 @@ export function Geometric() {
       const x = sh.age / SHELL_LIFE;
       l.scale.setScalar(1.3 + 10 * Math.pow(x, 0.7));
       l.rotation.set(sh.strength * 3, i * 1.7, 0);
-      (l.material as THREE.LineBasicMaterial).opacity = Math.pow(1 - x, 2.5) * (0.25 + 0.5 * sh.strength);
+      (l.material as THREE.LineBasicMaterial).color.copy(gc[F.kick]);
+      (l.material as THREE.LineBasicMaterial).opacity = Math.pow(1 - x, 2.5) * (0.25 + 0.5 * sh.strength) * Math.min(1.5, G.groove);
     });
 
     // pads
-    const padCol = tmp.c.copy(COL[F.pads]);
+    const padCol = tmp.c.copy(gc[F.pads]);
     const hsl = { h: 0, s: 0, l: 0 };
     padCol.getHSL(hsl);
     // the harmony tints the teal a little (circle of fifths → ±0.08 hue), so chord changes show
@@ -215,20 +239,20 @@ export function Geometric() {
       const u = (l.material as THREE.ShaderMaterial).uniforms;
       u.uBuild.value = S.build[i] * 1.03;
       u.uColor.value.copy(padCol);
-      u.uGain.value = 0.55 + 0.7 * lv[F.pads] + 0.6 * S.dropFlash;
+      u.uGain.value = (0.55 + 0.7 * C.fam[F.pads] + 0.6 * S.dropFlash) * G.space;
       l.rotation.set(S.shellRot[i] * 0.37, S.shellRot[i], S.shellRot[i] * 0.21 * (i - 1));
     });
 
     // bass
     for (let i = 0; i < COLUMNS; i++) {
       const a = (i / COLUMNS) * Math.PI * 2;
-      const h = 0.12 + 7 * S.heights[i];
+      const h = 0.12 + 7 * S.heights[i] * Math.min(1.6, G.bass);
       tmp.v.set(Math.cos(a) * RING_R, FLOOR_Y, Math.sin(a) * RING_R);
       tmp.q.setFromAxisAngle(tmp.axis.set(0, 1, 0), -a);
       tmp.s.set(1, h, 1);
       P.columns.setMatrixAt(i, tmp.m.compose(tmp.v, tmp.q, tmp.s));
       const b = 0.18 + 0.55 * S.heights[i] + 0.9 * S.fresh[i];
-      P.columns.setColorAt(i, tmp.c.copy(COL[F.bass]).multiplyScalar(b));
+      P.columns.setColorAt(i, tmp.c.copy(gc[F.bass]).multiplyScalar(b * (1 - 0.35 * C.calm)));
     }
     P.columns.instanceMatrix.needsUpdate = true;
     P.columns.instanceColor!.needsUpdate = true;
@@ -236,7 +260,7 @@ export function Geometric() {
     // lead: ribbon in age order, oldest first
     const pos = P.ribbon.geometry.getAttribute('position') as THREE.BufferAttribute;
     const col = P.ribbon.geometry.getAttribute('color') as THREE.BufferAttribute;
-    const lc = COL[F.lead];
+    const lc = tmp.c.copy(gc[F.lead]).multiplyScalar(Math.min(1.6, G.melody)).clone();
     for (let k = 0; k < TRAIL; k++) {
       const j = (S.trailHead + 1 + k) % TRAIL; // k = 0 oldest … TRAIL-1 newest
       const o = j * 4;
@@ -253,6 +277,7 @@ export function Geometric() {
     col.needsUpdate = true;
     const ho = S.trailHead * 4;
     P.leadHead.position.set(S.trail[ho], S.trail[ho + 1], S.trail[ho + 2]);
+    (P.leadHead.material as THREE.MeshBasicMaterial).color.copy(lc);
     P.leadHead.scale.setScalar(0.6 + 1.4 * lv[F.lead] + 1.2 * d.fam.hit[F.lead]);
     P.leadHead.rotation.y = S.t * 2;
     S.nodes.forEach((n, i) => {
@@ -267,7 +292,7 @@ export function Geometric() {
     P.nodes.instanceColor!.needsUpdate = true;
 
     // hits
-    const hc = COL[F.hits];
+    const hc = tmp.c.copy(gc[F.hits]).multiplyScalar(Math.min(1.6, G.groove)).clone();
     S.shards.forEach((s, i) => {
       const k = s.alive ? 1 - s.age / s.life : 0;
       tmp.v.set(s.x, s.y, s.z);
@@ -282,8 +307,9 @@ export function Geometric() {
     // hats
     P.spark.needsUpdate = true;
     const lu = (P.lattice.material as THREE.ShaderMaterial).uniforms;
-    lu.uBase.value = 0.045 + 0.3 * lv[F.hats] + 0.05 * d.idle;
-    P.lattice.scale.setScalar(1 - 0.08 * d.tension + 0.05 * S.dropFlash);
+    lu.uColor.value.copy(gc[F.hats]);
+    lu.uBase.value = (0.045 + 0.3 * C.fam[F.hats] + 0.05 * d.idle) * Math.min(1.5, G.groove) + 0.25 * C.sectionHit;
+    P.lattice.scale.setScalar(look.reach.step(reach, dt, 0.5) * (1 - 0.12 * C.build + 0.07 * S.dropFlash));
 
     // perf readout: the two most present families right now
     const top = lv.map((v, k) => [v, k] as const).sort((a, b) => b[0] - a[0]).filter(([v]) => v > 0.15).slice(0, 2);

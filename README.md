@@ -81,6 +81,10 @@ Choose or drop several songs and they play as one continuous mix (`src/audio/mix
 
 `window.__sonic.renderMix(urls, seconds, lead)` (with `?debug`) renders a transition offline with the real engine on an OfflineAudioContext and returns a WAV.
 
+### The conductor (shared musical reading)
+
+`src/mapping/conductor.ts` runs once per frame after the drives and gives every world the same eased reading of the music: spring-smoothed levels per family and band; the build before a drop (rising), the drop as an impulse that rings out, breakdowns; the current section, the moment a new one starts and how far through it we are; and with song mood on, the song's palette (recolouring any colour by its brightness) and per-element gains, eased so a DJ mix morphs one song's look into the next. Geometric Intelligence uses it for a formation per kind of section, contraction through builds and release on drops, opening out in breakdowns and the song's palette; the Tunnel and Ink in Water take the palette and gains, and Ink also draws the ink inward through a build and bursts it out on the drop. Song mood works in the valley, Geometric, the Tunnel and Ink (`#geometric-mood`, …).
+
 ### Song mood (`#valley-mood`, toggle with **M**)
 
 While the song map is built, a **song profile** is measured (`src/audio/songProfile.ts`): loudness and dynamics, brightness, tempo and pulse, hit and note rates, how the energy splits across the six families, the key's major/minor colour from a long-window chroma (bass notes resolved), chord-change rate, drops and breakdowns. `songMood.ts` places those against a **reference library** (`libraryRef.ts`: 21-point quantile tables from 241 real songs, built by `scripts/build-library-ref.py` from `scripts/profile-lib.ts` output), giving energy and brightness evenly spread over 0..1 and what the song is built around (bass, groove, melody, space, arc).

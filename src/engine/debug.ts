@@ -60,6 +60,7 @@ import { synthDemo } from '../audio/demoTrack';
 import { buildSongMap } from '../audio/songMap';
 import { MixEngine } from '../audio/mix/MixEngine';
 import { planTransition } from '../audio/mix/transition';
+import { conductor } from '../mapping/conductor';
 
 let stepper: ((dt: number, d: Drives) => void) | null = null;
 let extraStats: (() => Record<string, number>) | null = null;
@@ -103,12 +104,14 @@ export function runOffline(data: Float32Array, sr: number, seconds: number, ever
     fftMagDb(frame, freq);
     const f = fx.process(freq, frame, sr, t, dt);
     const d = mp.update(f, gains, sensitivity, dt);
+    conductor.update(dt, d, useStore.getState().mood && ['valley', 'geometric', 'tunnel', 'ink'].includes(useStore.getState().world));
     stepper(dt, d);
     if (i % every === 0) {
       const s = readStats();
       out.push({ t, section: f.section, fam: f.fam.level.map((v) => +v.toFixed(2)).join(' ') as unknown as number, bass: f.bass, kick: d.pulse, kicks: f.kickCount, drops: f.dropCount, energy: d.energy, gravity: d.gravity, ...(s ?? {}), ...(extraStats?.() ?? {}), ...((worldInfo?.() ?? {}) as Record<string, number | string>) });
     }
   }
+  conductor.snap();
   driveOverride.d = mp.d; // what is on screen now matches the last offline frame
   return out;
 }
