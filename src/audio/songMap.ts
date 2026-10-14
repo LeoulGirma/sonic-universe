@@ -1,5 +1,6 @@
 import { FeatureExtractor } from './FeatureExtractor';
 import { fftMagDb } from './fft';
+import { ProfileCollector, type RawProfile } from './songProfile';
 import { FamilyCollector, type FamilyTrack } from './soundFamilies';
 import { SpecCollector, type SpecTrack } from './spectrum';
 import { findSections, type Section } from './sections';
@@ -30,6 +31,8 @@ export interface SongMap {
   kicks: { t: Float32Array; strength: Float32Array };
   /** sections (verse/chorus-like passages); sections with the same label are the same kind */
   sections: Section[];
+  /** whole-song descriptors (mood, energy, what the song is built around) */
+  profile: RawProfile | null;
 }
 
 export interface MapHit {
@@ -165,6 +168,8 @@ export function buildSongMap(pcm: Float32Array, sr: number, onProgress?: (p: num
   const inten = new Float32Array(nFrames);
   const fam = new FamilyCollector(fps, N / sr);
   const spec = new SpecCollector(fps / 2, N / sr);
+  fam.keepDb = true;
+  const prof = new ProfileCollector();
   for (let i = 0; i < nFrames; i++) {
     const t = N / sr + i * dt;
     const end = Math.floor(t * sr);
@@ -178,6 +183,7 @@ export function buildSongMap(pcm: Float32Array, sr: number, onProgress?: (p: num
     inten[i] = f.intensity;
     fam.push(freq, sr / N, f.loudnessDb);
     if (i % 2 === 0) spec.push(freq, sr / N, f.loudnessDb);
+    if (i % 4 === 0) prof.push(freq, sr / N, f.loudnessDb, SILENCE_DB);
     if (onProgress && i % 1500 === 0) onProgress(0.8 * (i / nFrames));
   }
   const tOf = (i: number) => N / sr + i * dt;
@@ -302,9 +308,16 @@ export function buildSongMap(pcm: Float32Array, sr: number, onProgress?: (p: num
   const spectrum = nFrames > 0 ? spec.build(SILENCE_DB) : null;
   const sections = beats.length > 1 ? findSections(beats, duration, spectrum, families, breakdowns, drops) : [];
   const kicks = { t: Float32Array.from(hits.map((h) => h.start)), strength: Float32Array.from(hits.map((h) => Math.min(1, 0.2 + 0.6 * h.strength))) };
+  const profile = nFrames > 0
+    ? prof.finish({
+        loudDb, fps, silenceDb: SILENCE_DB, duration, bpm, pulse: beatConfidence, kicks: strong.length, fam: families,
+        drops: drops.length, breakdowns, sectionLabels: new Set(sections.map((x) => x.label)).size,
+      })
+    : null;
+  if (families) delete families.db;
   onProgress?.(1);
 
-  return { duration, bpm, beats, beatConfidence, breakdowns, drops, anticipation, levels, families, spectrum, kicks, sections };
+  return { duration, bpm, beats, beatConfidence, breakdowns, drops, anticipation, levels, families, spectrum, kicks, sections, profile };
 }
 
 /** Index of the last beat at or before t (-1 if before the first). */
