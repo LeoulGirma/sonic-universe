@@ -222,13 +222,39 @@ export function Overlay() {
           <div className="welcome__actions">
             <FilePick className="btn btn--primary" label="Choose a song"><IFile /> Choose a song</FilePick>
             <FilePick className="btn" label="Mix several songs" multi><IMix /> Mix several songs</FilePick>
-            <button className="btn" onClick={() => void playDemo()}><ISpark /> Play the demo groove</button>
             {AudioEngine.canListenToSystem && (
               <button className="btn" onClick={() => void audioEngine.startSystemAudio()}><IScreen /> Listen to this computer</button>
             )}
             <button className="btn" onClick={() => void audioEngine.startMic()}><IMic /> Listen to the room</button>
+            <button className="btn btn--ghost" onClick={() => void playDemo()}><ISpark /> Demo groove</button>
           </div>
-          {!IS_MOBILE && <p className="welcome__hint">Or drop an audio file anywhere on this page. Drop several to hear them as one continuous DJ mix.</p>}
+          <nav className="hub" aria-label="Worlds">
+            <div className="hub__row">
+              {WORLDS.filter((w) => w.Component).map((w) => (
+                <a
+                  key={w.id}
+                  href={`#${w.id}${w.id === st.world && st.mood && MOOD_WORLDS.includes(w.id) ? '-mood' : ''}`}
+                  className={`hub__card ${w.id === st.world ? 'is-on' : ''}`}
+                  style={{ ['--w' as string]: WORLD_TINT[w.id] }}
+                  aria-current={w.id === st.world ? 'page' : undefined}
+                  ref={w.id === st.world ? (el) => el?.scrollIntoView({ block: 'nearest', inline: 'nearest' }) : undefined}
+                  onClick={(e) => { e.preventDefault(); st.set({ world: w.id }); }}
+                >
+                  <span className="hub__name">{w.name}</span>
+                  <span className="hub__tag">{w.tagline}</span>
+                </a>
+              ))}
+            </div>
+            <div className="hub__foot">
+              {MOOD_WORLDS.includes(st.world) && (
+                <button className={`hub__pill ${st.mood ? 'is-on' : ''}`} aria-pressed={st.mood} onClick={() => st.set({ mood: !st.mood })}>
+                  <ISpark size={14} /> Song mood {st.mood ? 'on' : 'off'}
+                </button>
+              )}
+              <span className="hub__other">Other versions: <a href={`${import.meta.env.BASE_URL}valley-v4.html`}>Sound Valley v4</a></span>
+            </div>
+          </nav>
+          {!IS_MOBILE && <p className="welcome__hint">Or drop audio files anywhere on this page. Several at once play as one continuous DJ mix.</p>}
         </section>
       )}
       {tr.loading && <div className="loading" role="status">{tr.loadingLabel || 'Loading…'}</div>}
@@ -252,12 +278,22 @@ export function Overlay() {
   );
 }
 
-/** song mood on/off, kept in the link (#valley-mood) so it can be shared and reopened */
+/** song mood on/off (the link follows: #valley-mood) */
 function setMood(on: boolean) {
-  const st = useStore.getState();
-  st.set({ mood: on });
-  try { history.replaceState(null, '', `#${st.world}${on ? '-mood' : ''}`); } catch { /* ignore */ }
+  useStore.getState().set({ mood: on });
 }
+
+/** each world's own colour on the hub */
+const WORLD_TINT: Record<string, string> = {
+  cosmic: '#8f7bff', liquid: '#4fc3ff', geometric: '#ff6b5e', life: '#7bff9e', tunnel: '#ffb547', valley: '#c58bff', ink: '#ff5fa2',
+};
+
+// the link always says where you are, so it can be bookmarked or shared
+useStore.subscribe((s, prev) => {
+  if (s.world === prev.world && s.mood === prev.mood) return;
+  const h = `#${s.world}${s.mood && MOOD_WORLDS.includes(s.world) ? '-mood' : ''}`;
+  try { if (location.hash !== h && location.hash !== '#mic') history.replaceState(null, '', h); } catch { /* ignore */ }
+});
 
 function Tool(p: { label: string; on?: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
