@@ -128,6 +128,8 @@ Built after the tunnel proved tiring to watch (tight space, zoom pumping, full-s
 
 **Keeping it alive over a whole song:** hits send a light running outward along the near ridges and hats strike gold glints on them; ridge brightness follows each 16th's energy steeply (loud ones flare, quiet ones fall dark); the chord's colour (circle of fifths) tints the land near you; and each kind of section gets its own camera shot (low glide, high crane, drift left or right), eased over several seconds and repeated when the section returns (live: a new shot every 32 beats).
 
+**Heavy bass, any song:** a bass that is loud all song (a sustained 808) used to read as a constant, so the land barely moved. Now sudden rises in the lows (each 808 hit, a drop) heave the land around the camera, which responds to change rather than level; the lowest bands get much more of the valley's width (they used to fall in the flat strip beside the route); and every band keeps at least a 24 dB window. `scripts/punch-probe.ts` measures it: bass punches per second on Timeless 1.2, My Love 0.9, LARK 1.5.
+
 Comfort rules: slow travel (2.4 units per beat), fixed field of view, no camera roll, ridges near the route kept below eye level, light on darkness, no full-screen flashes. Checked on a 125 BPM Afrobeats track (LARK x Nahibeatz x Yonta) and F1.
 
 ## World G: Ink in Water

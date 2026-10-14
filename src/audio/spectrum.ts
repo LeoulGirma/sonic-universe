@@ -47,7 +47,10 @@ export class SpecCollector {
       for (let i = 0; i < n; i++) if (this.loud[i] > silenceDb) v.push(this.rows[i][k]);
       v.sort((a, b) => a - b);
       const q = (p: number) => (v.length ? v[Math.min(v.length - 1, Math.floor(p * (v.length - 1)))] : -100);
-      const lo = q(0.1), hi = Math.max(q(0.995), lo + 18);
+      // at least a 24 dB window below the band's peak: a bass that is loud all song (an 808)
+      // still shows each note's hit and decay instead of sitting pinned near the top
+      const hi = q(0.995);
+      const lo = Math.min(q(0.1), hi - 24);
       for (let i = 0; i < n; i++) {
         const x = this.loud[i] > silenceDb ? (this.rows[i][k] - lo) / (hi - lo) : 0;
         data[i * SPEC_BANDS + k] = Math.round(255 * Math.min(1, Math.max(0, x)));
@@ -82,8 +85,8 @@ export class SpecLive {
       top = Math.max(top, this.ceil[k]);
     }
     for (let k = 0; k < SPEC_BANDS; k++) {
-      const lo = Math.max(this.floor[k], top - 55);
-      const hi = Math.max(this.ceil[k], lo + 18);
+      const hi = this.ceil[k];
+      const lo = Math.min(Math.max(this.floor[k], top - 55), hi - 24);
       this.level[k] = Math.min(1, Math.max(0, (this.db[k] - lo) / (hi - lo)));
     }
   }

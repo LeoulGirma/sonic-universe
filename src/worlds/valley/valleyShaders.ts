@@ -26,6 +26,7 @@ export const valleyShared = /* glsl */ `
   uniform float uSpacing;  // scene units per beat
   uniform float uTime;
   uniform float uNowSpec[32]; // the spectrum at the exact moment you hear
+  uniform float uHeave;       // bass punch: sudden rises in the lows (808 hits, drops) lift the land
 
   float hash12(vec2 p) {
     vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -73,9 +74,9 @@ export const valleyShared = /* glsl */ `
   // the winding route through the valley (absolute beats → stable); the camera follows it
   float pathX(float b) { return 9.0 * sin(b * 0.045) + 4.0 * sin(b * 0.017 + 1.0); }
   float zOf(float b) { return -(b - uCam) * uSpacing; }
-  float uAcross(float ax) { return clamp((ax - 7.0) / 72.0, 0.0, 1.0); }
+  float uAcross(float ax) { return clamp((ax - 4.5) / 76.0, 0.0, 1.0); }
   float nowSpec(float u) {
-    float bf = clamp(pow(u, 0.85), 0.0, 1.0) * 31.0;
+    float bf = clamp(pow(u, 1.6), 0.0, 1.0) * 31.0;
     int k = int(floor(bf));
     return mix(uNowSpec[k], uNowSpec[min(k + 1, 31)], fract(bf));
   }
@@ -96,8 +97,8 @@ export const valleyShared = /* glsl */ `
     vec4 W = sectW(row);
     vec4 I = sectI(row);
     float seed = I.x, lb = I.y;
-    float s = specAt(row, pow(u, 0.85));
-    float edge = smoothstep(6.0, 16.0, ax);                 // the route itself stays flat and open
+    float s = specAt(row, pow(u, 1.6));
+    float edge = smoothstep(4.0, 10.0, ax);                 // the route itself stays flat and open
     float amp = (1.6 + 3.2 * (1.0 - u) + 2.5 * smoothstep(0.3, 1.0, u)) * edge;
     float n = vnoise(vec2(cx * 0.07 + seed * 37.0, lb * 0.5 + seed * 11.0));
     // dunes: broad swells, the spectrum riding on them
@@ -113,7 +114,7 @@ export const valleyShared = /* glsl */ `
     float cxi = (floor(cx / cw) + 0.5) * cw;
     float rcell = (floor(row / 2.0) + 0.5) * 2.0;
     float lot = hash12(vec2(floor(cx / cw) + seed * 17.0, floor((lb * 4.0) / 2.0)));
-    float tower = specAt(rcell, pow(uAcross(abs(cxi)), 0.85)) * (6.0 + 12.0 * smoothstep(10.0, 70.0, ax)) * step(0.3, lot);
+    float tower = specAt(rcell, pow(uAcross(abs(cxi)), 1.6)) * (6.0 + 12.0 * smoothstep(10.0, 70.0, ax)) * step(0.3, lot);
     float spires = tower * smoothstep(9.0, 14.0, ax);
     float form = dot(W, vec4(dunes, mountains, lake, spires));
     // dormant ahead, alive behind the now line, and breathing with the sound right around it
@@ -124,7 +125,8 @@ export const valleyShared = /* glsl */ `
     float ripple = 0.7 + 0.3 * sin(b * 1.6 - uTime * 5.0 + ax * 0.08);
     float breathe = near * nowSpec(u) * amp * 1.1 * ripple + act * exp(-max(uPos - b, 0.0) / 2.5) * nowSpec(u) * amp * 0.4;
     float valley = 14.0 * smoothstep(16.0, 115.0, ax) * (1.0 - 0.7 * W.z);
-    return -2.0 + valley + form * mix(0.18, 1.0, act) + breathe;
+    float heave = uHeave * near * (2.0 + 5.0 * smoothstep(4.0, 30.0, ax)) * smoothstep(3.0, 9.0, ax);
+    return -2.0 + valley + form * mix(0.18, 1.0, act) + breathe + heave;
   }
   float nowGlow(float b) { float d = (b - uPos) * float(RPB) * 1.1; return exp(-d * d); }
 `;
@@ -156,7 +158,7 @@ export const groundVertex = /* glsl */ `
     float R = uKickAge * 45.0;
     float wave = exp(-pow((d - R) / 5.0, 2.0)) * pow(max(0.0, 1.0 - uKickAge / 1.4), 2.0) * uKickStr;
     y += wave * (1.4 + 1.6 * sectW(row).z) * smoothstep(2.0, 10.0, ax);
-    vB = b; vU = uAcross(ax); vS = specAt(row, pow(vU, 0.85)); vZ = -z; vRing = wave; vW = sectW(row); vH = y; vCx = gk.x * 120.0;
+    vB = b; vU = uAcross(ax); vS = specAt(row, pow(vU, 1.6)); vZ = -z; vRing = wave; vW = sectW(row); vH = y; vCx = gk.x * 120.0;
     gl_Position = projectionMatrix * viewMatrix * vec4(x, y, z, 1.0);
   }
 `;

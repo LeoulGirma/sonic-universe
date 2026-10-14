@@ -159,11 +159,12 @@ export function Valley() {
   const lastDrives = useRef<Drives | null>(null);
 
   const nowSpec = useMemo(() => new Float32Array(32), []);
+  const heave = useMemo(() => ({ value: 0 }), []);
   const scene = useMemo(() => {
     const defines = { RPB, NROWS };
     const common = () => ({
       uFamTex: { value: tex }, uSpecTex: { value: specTex }, uSectTex: { value: sectTex }, uPos: { value: 0 }, uCam: { value: 0 }, uBase: { value: 0 },
-      uSpacing: { value: SPACING }, uTime: { value: 0 }, uNowSpec: { value: nowSpec },
+      uSpacing: { value: SPACING }, uTime: { value: 0 }, uNowSpec: { value: nowSpec }, uHeave: heave,
     });
     const horizon = new THREE.Color('#120d2a');
     const vRows = (BEHIND_B + AHEAD_B) * RPB + 1;
@@ -307,6 +308,7 @@ export function Valley() {
     lift: new Envelope(2.5, 4), leadHit: 0,
     specS: Array.from({ length: 32 }, () => new Spring()), camY: new Spring(7), glow: new Spring(),
     hitAge: 9, hitStr: 0, lastHitEv: -1, hatAge: 9, hatStr: 0, lastHatEv: -1, hatSeed: 0,
+    lowSlow: new Spring(0), punch: 0, heave: new Spring(0), lastDropEv: -1,
     shotH: new Spring(0), shotSide: new Spring(0), shotLook: new Spring(0), chord: new THREE.Color(), chordS: new Spring(),
   });
 
@@ -418,6 +420,16 @@ export function Valley() {
       u.uTime.value = S.t;
     }
     const gu = (scene.ground.material as THREE.ShaderMaterial).uniforms;
+    // bass punch: the lows' sudden rises (an 808 hit, a drop) heave the land; a constant bass doesn't
+    {
+      let low = 0;
+      for (let k = 0; k < 7; k++) low += d.spec[k] / 7;
+      const slow = S.lowSlow.step(low, dt, 0.8);
+      S.punch = Math.max(S.punch * Math.exp(-dt / 0.28), Math.max(0, low - slow - 0.04) * 3.2);
+      if (S.lastDropEv < 0) S.lastDropEv = d.dropEvents;
+      if (d.dropEvents !== S.lastDropEv) { S.lastDropEv = d.dropEvents; S.punch = Math.max(S.punch, 1.4); }
+      heave.value = S.heave.step(Math.min(1.6, S.punch + 0.25 * low), dt, 3.5);
+    }
     // hits and hats light the near ridges
     if (S.lastHitEv < 0) { S.lastHitEv = d.fam.events[F.hits]; S.lastHatEv = d.fam.events[F.hats]; }
     if (d.fam.events[F.hits] !== S.lastHitEv) { S.lastHitEv = d.fam.events[F.hits]; S.hitAge = 0; S.hitStr = Math.min(1, 0.3 + d.fam.hit[F.hits]); }
