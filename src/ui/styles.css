@@ -359,3 +359,8 @@ input[type='range']::-moz-range-thumb { width: 13px; height: 13px; border: 0; bo
   .welcome__hint { display: none; }
   .hub { margin-top: 14px; }
 }
+.hub__dev { margin-top: 6px; }
+.hub__devlabel { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); margin: 6px 0 4px; }
+.hub__row--dev { justify-content: flex-start; }
+.hub__card--dev { flex: 0 0 136px; padding: 9px 11px 10px; }
+.hub__card--dev .hub__name { font-size: 12.5px; }

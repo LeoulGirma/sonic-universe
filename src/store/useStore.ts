@@ -100,6 +100,7 @@ export interface AppState {
   frozen: boolean;
   showPerf: boolean;
   showFamilies: boolean; // the sound-family legend
+  dev: boolean; // developer mode: earlier builds on the start screen for comparison
   mood: boolean; // song mood: the world sets itself up for each song (#valley-mood)
   panel: 'none' | 'settings' | 'experiment';
   cursor: CursorMode;
@@ -143,6 +144,7 @@ export const useStore = create<AppState>((set) => ({
   frozen: false,
   showPerf: false,
   showFamilies: false,
+  dev: (() => { try { return /[?&]dev\b/.test(location.search) || localStorage.getItem('sonic.dev') === '1'; } catch { return false; } })(),
   mood: typeof window !== 'undefined' && /-mood$/.test(location.hash),
   panel: 'none',
   cursor: 'attract',

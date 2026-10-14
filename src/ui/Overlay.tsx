@@ -244,12 +244,25 @@ export function Overlay() {
                   <span className="hub__tag">{w.tagline}</span>
                 </a>
               ), ...(w.id === 'valley' ? [(
-                <a key="valley-v4" href={`${import.meta.env.BASE_URL}valley-v4.html`} className="hub__card" style={{ ['--w' as string]: '#9b8cff' }}>
+                <a key="valley-v4" href={`${import.meta.env.BASE_URL}versions/valley-v4.html`} className="hub__card" style={{ ['--w' as string]: '#9b8cff' }}>
                   <span className="hub__name">Sound Valley v4</span>
                   <span className="hub__tag">The earlier valley, kept as it was</span>
                 </a>
               )] : [])])}
             </div>
+            {st.dev && (
+              <div className="hub__dev">
+                <div className="hub__devlabel">Earlier builds (frozen as they were)</div>
+                <div className="hub__row hub__row--dev">
+                  {BUILDS.map((b) => (
+                    <a key={b.file} className="hub__card hub__card--dev" href={`${import.meta.env.BASE_URL}versions/${b.file}.html${b.hash}`} style={{ ['--w' as string]: WORLD_TINT[b.world] }}>
+                      <span className="hub__name">{b.name}</span>
+                      <span className="hub__tag">{b.when}{b.note ? ` · ${b.note}` : ''}</span>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="hub__foot">
               {MOOD_WORLDS.includes(st.world) && (
                 <button className={`hub__pill ${st.mood ? 'is-on' : ''}`} aria-pressed={st.mood} onClick={() => st.set({ mood: !st.mood })}>
@@ -286,6 +299,24 @@ export function Overlay() {
 function setMood(on: boolean) {
   useStore.getState().set({ mood: on });
 }
+
+/** single-file snapshots kept for comparison (developer mode), newest first */
+const BUILDS = [
+  { file: 'valley-v7', name: 'Sound Valley v7', world: 'valley', hash: '', when: 'Oct 13, 18:26', note: '' },
+  { file: 'ink', name: 'Ink in Water', world: 'ink', hash: '', when: 'Oct 13, 18:26', note: 'first Ink' },
+  { file: 'valley-v6', name: 'Sound Valley v6', world: 'valley', hash: '', when: 'Oct 13, 18:03', note: '' },
+  { file: 'valley-v5', name: 'Sound Valley v5', world: 'valley', hash: '', when: 'Oct 13, 17:59', note: '' },
+  { file: 'valley-v4', name: 'Sound Valley v4', world: 'valley', hash: '', when: 'Oct 13, 17:54', note: '' },
+  { file: 'valley-v3', name: 'Sound Valley v3', world: 'valley', hash: '', when: 'Oct 13, 17:46', note: '' },
+  { file: 'valley-v2', name: 'Sound Valley v2', world: 'valley', hash: '', when: 'Oct 13, 17:32', note: '' },
+  { file: 'valley', name: 'Sound Valley v1', world: 'valley', hash: '', when: 'Oct 13, 13:45', note: 'first valley' },
+  { file: 'tunnel-v2', name: 'Tunnel v2', world: 'tunnel', hash: '', when: 'Oct 13, 13:26', note: 'sound families' },
+  { file: 'app', name: 'Full app', world: 'cosmic', hash: '', when: 'Oct 13, 11:29', note: '' },
+  { file: 'tunnel', name: 'Tunnel v1', world: 'tunnel', hash: '#tunnel', when: 'Oct 13, 10:56', note: '' },
+  { file: 'liquid', name: 'Liquid Dimension', world: 'liquid', hash: '#liquid', when: 'Oct 13, 10:38', note: '' },
+  { file: 'life', name: 'Particle Life', world: 'life', hash: '#life', when: 'Oct 13, 09:22', note: '' },
+  { file: 'listen', name: 'Listening build', world: 'cosmic', hash: '', when: 'Oct 13, 09:21', note: 'first build' },
+];
 
 /** each world's own colour on the hub */
 const WORLD_TINT: Record<string, string> = {
@@ -621,6 +652,7 @@ function SettingsPanel() {
           <Toggle label="Cinematic camera" on={st.cinematic} onChange={(v) => st.set({ cinematic: v })} />
           <Toggle label="Freeze simulation" on={st.frozen} onChange={(v) => st.set({ frozen: v })} />
           <Toggle label="Performance readout" on={st.showPerf} onChange={(v) => st.set({ showPerf: v })} />
+          <Toggle label="Developer mode (earlier builds on the start screen)" on={st.dev} onChange={(v) => { st.set({ dev: v }); try { localStorage.setItem('sonic.dev', v ? '1' : '0'); } catch { /* private mode */ } }} />
         </div>
       ) : (
         <div className="panel__body">
