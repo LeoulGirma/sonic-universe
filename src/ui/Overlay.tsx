@@ -230,7 +230,7 @@ export function Overlay() {
           </div>
           <nav className="hub" aria-label="Worlds">
             <div className="hub__row">
-              {WORLDS.filter((w) => w.Component).map((w) => (
+              {WORLDS.filter((w) => w.Component).flatMap((w) => [(
                 <a
                   key={w.id}
                   href={`#${w.id}${w.id === st.world && st.mood && MOOD_WORLDS.includes(w.id) ? '-mood' : ''}`}
@@ -243,7 +243,12 @@ export function Overlay() {
                   <span className="hub__name">{w.name}</span>
                   <span className="hub__tag">{w.tagline}</span>
                 </a>
-              ))}
+              ), ...(w.id === 'valley' ? [(
+                <a key="valley-v4" href={`${import.meta.env.BASE_URL}valley-v4.html`} className="hub__card" style={{ ['--w' as string]: '#9b8cff' }}>
+                  <span className="hub__name">Sound Valley v4</span>
+                  <span className="hub__tag">The earlier valley, kept as it was</span>
+                </a>
+              )] : [])])}
             </div>
             <div className="hub__foot">
               {MOOD_WORLDS.includes(st.world) && (
@@ -251,7 +256,6 @@ export function Overlay() {
                   <ISpark size={14} /> Song mood {st.mood ? 'on' : 'off'}
                 </button>
               )}
-              <span className="hub__other">Other versions: <a href={`${import.meta.env.BASE_URL}valley-v4.html`}>Sound Valley v4</a></span>
             </div>
           </nav>
           {!IS_MOBILE && <p className="welcome__hint">Or drop audio files anywhere on this page. Several at once play as one continuous DJ mix.</p>}

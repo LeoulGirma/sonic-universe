@@ -23,6 +23,21 @@ export interface WorldDef {
 
 export const WORLDS: WorldDef[] = [
   {
+    id: 'valley', name: 'Sound Valley', tagline: 'Fly through a landscape each sound builds', Component: Valley,
+    headline: 'Play a song. Fly through its landscape.',
+    lede: 'Every kind of sound builds its own part of a wide night valley: the bass raises the hills under you, chords and strings hang aurora curtains in the sky, the melody is a glowing path ahead that rises and falls with the tune, snares and claps raise light monoliths along the sides, hi-hats glint in the air, and each kick sends a soft ring across the ground. With a song file, the land ahead is built from what is about to play. Move the pointer to look around.',
+  },
+  {
+    id: 'geometric', name: 'Geometric Intelligence', tagline: 'Every instrument builds its own part', Component: Geometric,
+    headline: 'Play a song. Watch each sound build its part.',
+    lede: 'The music is split into six kinds of sound, each building its own structure in its own colour: kicks pulse the red core, snares and claps throw orange shards, hi-hats light the gold lattice, the bass raises a violet skyline, chords and strings construct the teal shells, and the melody draws a pink ribbon at its own pitch.',
+  },
+  {
+    id: 'tunnel', name: 'The Impossible Tunnel', tagline: 'An infinite tunnel that transforms with every beat', Component: Tunnel,
+    headline: 'Play a song. Fly through it.',
+    lede: 'You pass one ring on every beat. With a song file, the tunnel ahead shows what is coming: chambers open for breakdowns, walls close in before drops, and every drop is a gate into a new shape. Steer with the arrow keys and look around with the pointer.',
+  },
+  {
     id: 'cosmic', name: 'Cosmic Genesis', tagline: 'Music creates galaxies and gravitational waves', Component: CosmicGenesis,
     headline: 'Play a song. Watch it build a galaxy.',
     lede: 'Bass bends gravity, kicks send shockwaves through the disk, hi-hats light individual stars.',
@@ -33,24 +48,9 @@ export const WORLDS: WorldDef[] = [
     lede: 'The bass swells the heavy masses, the mids ripple and swirl the middle, the highs shimmer the droplets. Kicks send waves across the surface; drops tear it apart.',
   },
   {
-    id: 'geometric', name: 'Geometric Intelligence', tagline: 'Every instrument builds its own part', Component: Geometric,
-    headline: 'Play a song. Watch each sound build its part.',
-    lede: 'The music is split into six kinds of sound, each building its own structure in its own colour: kicks pulse the red core, snares and claps throw orange shards, hi-hats light the gold lattice, the bass raises a violet skyline, chords and strings construct the teal shells, and the melody draws a pink ribbon at its own pitch.',
-  },
-  {
     id: 'life', name: 'Particle Life', tagline: 'Each song grows its own organisms', Component: ParticleLife,
     headline: 'Play a song. Watch it grow organisms.',
     lede: 'Six species attract and repel each other by rules the song chooses. Bass binds them, kicks scatter them, every drop grows a new ecosystem.',
-  },
-  {
-    id: 'tunnel', name: 'The Impossible Tunnel', tagline: 'An infinite tunnel that transforms with every beat', Component: Tunnel,
-    headline: 'Play a song. Fly through it.',
-    lede: 'You pass one ring on every beat. With a song file, the tunnel ahead shows what is coming: chambers open for breakdowns, walls close in before drops, and every drop is a gate into a new shape. Steer with the arrow keys and look around with the pointer.',
-  },
-  {
-    id: 'valley', name: 'Sound Valley', tagline: 'Fly through a landscape each sound builds', Component: Valley,
-    headline: 'Play a song. Fly through its landscape.',
-    lede: 'Every kind of sound builds its own part of a wide night valley: the bass raises the hills under you, chords and strings hang aurora curtains in the sky, the melody is a glowing path ahead that rises and falls with the tune, snares and claps raise light monoliths along the sides, hi-hats glint in the air, and each kick sends a soft ring across the ground. With a song file, the land ahead is built from what is about to play. Move the pointer to look around.',
   },
   {
     id: 'ink', name: 'Ink in Water', tagline: 'Every sound pours its own colour into a living fluid', Component: Ink,

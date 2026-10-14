@@ -129,7 +129,7 @@ const linked = (() => {
 })();
 
 export const useStore = create<AppState>((set) => ({
-  world: linked ?? 'cosmic',
+  world: linked ?? 'valley',
   palette: 'nebula',
   sensitivity: 1,
   gravityScale: 1,
