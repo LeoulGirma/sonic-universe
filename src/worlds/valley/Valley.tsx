@@ -174,7 +174,7 @@ export function Valley() {
     for (let r = 0; r < vRows; r++) for (let c = 0; c <= X_SEG; c++) {
       const i = r * (X_SEG + 1) + c;
       const u = (c / X_SEG) * 2 - 1;
-      gk[i * 2] = Math.sign(u) * Math.pow(Math.abs(u), 1.3); // denser near the path
+      gk[i * 2] = Math.sign(u) * Math.pow(Math.abs(u), 1.3) * 1.5; // denser near the path, wider land
       gk[i * 2 + 1] = r;
     }
     const gIdx: number[] = [];
@@ -483,7 +483,7 @@ export function Valley() {
       -(S.nowB + 10) * SPACING,
     );
     S.look.lerp(tgt, expCoef(dt, 0.7));
-    cam.position.set(S.camX, S.camY.step(6.2 + 2.2 * lift + shotH, dt, 0.25), 0);
+    cam.position.set(S.camX, S.camY.step(8.5 + 2.2 * lift + shotH, dt, 0.25), 0);
     cam.up.set(0, 1, 0);
     cam.lookAt(S.look);
     const fov = size.width < size.height ? 76 : 64;

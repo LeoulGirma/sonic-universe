@@ -74,7 +74,7 @@ export const valleyShared = /* glsl */ `
   // the winding route through the valley (absolute beats → stable); the camera follows it
   float pathX(float b) { return 9.0 * sin(b * 0.045) + 4.0 * sin(b * 0.017 + 1.0); }
   float zOf(float b) { return -(b - uCam) * uSpacing; }
-  float uAcross(float ax) { return clamp((ax - 4.5) / 76.0, 0.0, 1.0); }
+  float uAcross(float ax) { return clamp((ax - 8.0) / 120.0, 0.0, 1.0); }
   float nowSpec(float u) {
     float bf = clamp(pow(u, 1.6), 0.0, 1.0) * 31.0;
     int k = int(floor(bf));
@@ -98,15 +98,16 @@ export const valleyShared = /* glsl */ `
     vec4 I = sectI(row);
     float seed = I.x, lb = I.y;
     float s = specAt(row, pow(u, 1.6));
-    float edge = smoothstep(4.0, 10.0, ax);                 // the route itself stays flat and open
-    float amp = (1.6 + 3.2 * (1.0 - u) + 2.5 * smoothstep(0.3, 1.0, u)) * edge;
+    float edge = smoothstep(8.0, 26.0, ax);                 // a wide open floor around the route
+    // gentle near you, growing into hills toward the horizon: a landscape, not a canyon
+    float amp = (1.2 + 2.2 * u + 6.0 * smoothstep(0.25, 1.0, u)) * edge;
     float n = vnoise(vec2(cx * 0.07 + seed * 37.0, lb * 0.5 + seed * 11.0));
     // dunes: broad swells, the spectrum riding on them
     float swell = vnoise(vec2(cx * 0.025 + seed * 7.0, lb * 0.12 + seed * 3.0));
     float dunes = (swell * 5.0 * smoothstep(8.0, 40.0, ax) + s * amp * (0.6 + 0.5 * n)) * edge;
     // mountains: sharp ridged peaks rising toward the sides
     float rn = 1.0 - abs(vnoise(vec2(cx * 0.05 + seed * 13.0, lb * 0.18 + seed * 5.0)) * 2.0 - 1.0);
-    float mountains = (pow(rn, 3.0) * (3.0 + 30.0 * smoothstep(14.0, 95.0, ax)) + s * amp * 0.8) * edge;
+    float mountains = (pow(rn, 3.0) * (1.0 + 32.0 * smoothstep(30.0, 130.0, ax)) + s * amp * 0.8) * edge;
     // lake: almost flat; the kick ripples do the talking
     float lake = s * 0.35 * edge * (0.4 + 0.6 * n);
     // spires: a city of towers, each one a frequency band's level over an 8th note
@@ -114,18 +115,18 @@ export const valleyShared = /* glsl */ `
     float cxi = (floor(cx / cw) + 0.5) * cw;
     float rcell = (floor(row / 2.0) + 0.5) * 2.0;
     float lot = hash12(vec2(floor(cx / cw) + seed * 17.0, floor((lb * 4.0) / 2.0)));
-    float tower = specAt(rcell, pow(uAcross(abs(cxi)), 1.6)) * (6.0 + 12.0 * smoothstep(10.0, 70.0, ax)) * step(0.3, lot);
-    float spires = tower * smoothstep(9.0, 14.0, ax);
+    float tower = specAt(rcell, pow(uAcross(abs(cxi)), 1.6)) * (2.0 + 16.0 * smoothstep(30.0, 110.0, ax)) * step(0.3, lot);
+    float spires = tower * smoothstep(24.0, 40.0, ax);         // a skyline in the distance, open ground near you
     float form = dot(W, vec4(dunes, mountains, lake, spires));
     // dormant ahead, alive behind the now line, and breathing with the sound right around it
     float act = activation(b);
     // the present happens around YOU: land within ~10 beats of the camera moves with the sound you
     // are hearing (bass by the path, highs at the edges), a ripple running through it toward you
-    float near = exp(-max(b - uCam, 0.0) / 10.0);
+    float near = exp(-max(b - uCam, 0.0) / 12.0);
     float ripple = 0.7 + 0.3 * sin(b * 1.6 - uTime * 5.0 + ax * 0.08);
     float breathe = near * nowSpec(u) * amp * 1.1 * ripple + act * exp(-max(uPos - b, 0.0) / 2.5) * nowSpec(u) * amp * 0.4;
-    float valley = 14.0 * smoothstep(16.0, 115.0, ax) * (1.0 - 0.7 * W.z);
-    float heave = uHeave * near * (2.0 + 5.0 * smoothstep(4.0, 30.0, ax)) * smoothstep(3.0, 9.0, ax);
+    float valley = 12.0 * smoothstep(40.0, 170.0, ax) * (1.0 - 0.7 * W.z);
+    float heave = uHeave * near * (1.0 + 5.0 * smoothstep(20.0, 70.0, ax)) * smoothstep(10.0, 28.0, ax);
     return -2.0 + valley + form * mix(0.18, 1.0, act) + breathe + heave;
   }
   float nowGlow(float b) { float d = (b - uPos) * float(RPB) * 1.1; return exp(-d * d); }
