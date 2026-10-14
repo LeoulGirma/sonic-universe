@@ -1,3 +1,4 @@
+import { songMood, type SongMood } from './songMood';
 import { FeatureExtractor, MusicFeatures } from './FeatureExtractor';
 import type { SongMap } from './songMap';
 import { useStore } from '../store/useStore';
@@ -16,7 +17,7 @@ export interface TransportState {
   /** whole-song analysis for files: 'mapping' while it runs in the background */
   mapState: 'none' | 'mapping' | 'ready' | 'off';
   mapProgress: number;
-  mapInfo: { bpm: number; drops: number[]; breakdowns: [number, number][]; duration: number; confidence: number; sections: { start: number; end: number; label: number; biome: number }[] } | null;
+  mapInfo: { bpm: number; drops: number[]; breakdowns: [number, number][]; duration: number; confidence: number; sections: { start: number; end: number; label: number; biome: number }[]; mood: SongMood | null } | null;
 }
 
 /** How a file is being played: a media element (streams, low memory) or a decoded buffer. */
@@ -194,7 +195,7 @@ export class AudioEngine {
         this.set({
           mapState: 'ready',
           mapProgress: 1,
-          mapInfo: { bpm: map.bpm, drops: map.drops.map((d) => d.t), breakdowns: map.breakdowns, duration: map.duration, confidence: map.beatConfidence, sections: map.sections.map(({ start, end, label, biome }) => ({ start, end, label, biome })) },
+          mapInfo: { bpm: map.bpm, drops: map.drops.map((d) => d.t), breakdowns: map.breakdowns, duration: map.duration, confidence: map.beatConfidence, sections: map.sections.map(({ start, end, label, biome }) => ({ start, end, label, biome })), mood: map.profile ? songMood(map.profile) : null },
         });
       }
     };

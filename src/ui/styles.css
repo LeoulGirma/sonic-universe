@@ -295,3 +295,5 @@ input[type='range']::-moz-range-thumb { width: 13px; height: 13px; border: 0; bo
 .mk--b1 { background: #2ad4c2; }
 .mk--b2 { background: #4b8cff; }
 .mk--b3 { background: #ffb547; }
+
+.transport__mood { color: var(--accent); }

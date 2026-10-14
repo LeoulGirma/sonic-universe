@@ -9,6 +9,7 @@ import {
   ICamera, IClose, IExitFull, IFamilies, IFile, IFreeze, IFull, IMic, IPause, IPerf, IPlay, IScreen, ISettings, ISpark, IWorlds,
 } from './icons';
 import { FAMILY_INFO, NF } from '../audio/soundFamilies';
+import type { SongMood } from '../audio/songMood';
 
 const useTransport = () =>
   useSyncExternalStore(
@@ -125,6 +126,7 @@ export function Overlay() {
         case 'f': toggleFullscreen(); break;
         case 'p': s.set({ showPerf: !s.showPerf }); break;
         case 'i': s.set({ showFamilies: !s.showFamilies }); break;
+        case 'm': if (MOOD_WORLDS.includes(s.world)) setMood(!s.mood); break;
         case 'h': s.set({ uiHidden: !s.uiHidden }); break;
         case 'c': s.set({ cinematic: !s.cinematic }); break;
         case 'z': s.set({ frozen: !s.frozen }); break;
@@ -180,6 +182,9 @@ export function Overlay() {
           <Tool label={st.cinematic ? 'Cinematic camera on (C)' : 'Cinematic camera off (C)'} on={st.cinematic} onClick={() => st.set({ cinematic: !st.cinematic })}><ICamera /></Tool>
           <Tool label={st.frozen ? 'Resume simulation (Z)' : 'Freeze simulation (Z)'} on={st.frozen} onClick={() => st.set({ frozen: !st.frozen })}><IFreeze /></Tool>
           <Tool label="Sound families (I)" on={st.showFamilies} onClick={() => st.set({ showFamilies: !st.showFamilies })}><IFamilies /></Tool>
+          {MOOD_WORLDS.includes(st.world) && (
+            <Tool label={st.mood ? 'Song mood on: the world sets itself up for each song (M)' : 'Song mood off (M)'} on={st.mood} onClick={() => setMood(!st.mood)}><ISpark /></Tool>
+          )}
           <Tool label="Performance (P)" on={st.showPerf} onClick={() => st.set({ showPerf: !st.showPerf })}><IPerf /></Tool>
           <Tool label="Settings (O)" on={st.panel !== 'none'} onClick={() => st.set({ panel: st.panel === 'none' ? 'settings' : 'none' })}><ISettings /></Tool>
           <Tool label={isFull ? 'Exit fullscreen (F)' : 'Fullscreen (F)'} onClick={toggleFullscreen}>{isFull ? <IExitFull /> : <IFull />}</Tool>
@@ -244,6 +249,13 @@ export function Overlay() {
   );
 }
 
+/** song mood on/off, kept in the link (#valley-mood) so it can be shared and reopened */
+function setMood(on: boolean) {
+  const st = useStore.getState();
+  st.set({ mood: on });
+  try { history.replaceState(null, '', `#${st.world}${on ? '-mood' : ''}`); } catch { /* ignore */ }
+}
+
 function Tool(p: { label: string; on?: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
     <button className={`icon ${p.on ? 'icon--on' : ''}`} aria-label={p.label} title={p.label} aria-pressed={p.on} onClick={p.onClick}>
@@ -300,8 +312,15 @@ function FilePick(p: { className: string; label: string; children: React.ReactNo
   );
 }
 
+const LEAD_WORD = { bass: 'bass-led', groove: 'groove-led', melody: 'melody-led', space: 'spacious', arc: 'big swings' } as const;
+function moodWord(m: SongMood) {
+  return m.bright >= 0.5 ? (m.energy >= 0.5 ? 'Euphoric' : 'Glowing') : (m.energy >= 0.5 ? 'Fierce' : 'Brooding');
+}
+const MOOD_WORLDS = ['valley'];
+
 function Transport() {
   const tr = useTransport();
+  const moodOn = useStore((s) => s.mood && MOOD_WORLDS.includes(s.world));
   const time = useTicker(() => audioEngine.currentTime, 8);
   const [scrub, setScrub] = useState<number | null>(null);
   const mic = tr.source === 'mic' || tr.source === 'system';
@@ -318,6 +337,11 @@ function Transport() {
           {tr.mapState === 'ready' && tr.mapInfo && tr.mapInfo.bpm > 0 && (
             <span className="transport__map" title="Beats, breakdowns and drops come from a whole-song analysis">
               {Math.round(tr.mapInfo.bpm)} BPM{tr.mapInfo.drops.length ? `, ${tr.mapInfo.drops.length} drop${tr.mapInfo.drops.length > 1 ? 's' : ''}` : ''}
+            </span>
+          )}
+          {moodOn && tr.mapState === 'ready' && tr.mapInfo?.mood && (
+            <span className="transport__map transport__mood" title="Song mood: how this song sets up the world (energy and brightness against your library, and what it is built around)">
+              {moodWord(tr.mapInfo.mood)}, {LEAD_WORD[tr.mapInfo.mood.lead]}
             </span>
           )}
         </div>

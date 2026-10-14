@@ -100,6 +100,7 @@ export interface AppState {
   frozen: boolean;
   showPerf: boolean;
   showFamilies: boolean; // the sound-family legend
+  mood: boolean; // song mood: the world sets itself up for each song (#valley-mood)
   panel: 'none' | 'settings' | 'experiment';
   cursor: CursorMode;
   uiHidden: boolean;
@@ -123,7 +124,7 @@ const maxDpr = typeof window !== 'undefined' ? Math.min(window.devicePixelRatio 
 const WORLD_IDS: WorldId[] = ['cosmic', 'liquid', 'geometric', 'life', 'tunnel', 'valley', 'ink'];
 const linked = (() => {
   if (typeof window === 'undefined') return null;
-  const w = (window as unknown as { __SONIC_WORLD?: string }).__SONIC_WORLD ?? location.hash.replace('#', '');
+  const w = ((window as unknown as { __SONIC_WORLD?: string }).__SONIC_WORLD ?? location.hash.replace('#', '')).replace(/-mood$/, '');
   return WORLD_IDS.includes(w as WorldId) ? (w as WorldId) : null;
 })();
 
@@ -142,6 +143,7 @@ export const useStore = create<AppState>((set) => ({
   frozen: false,
   showPerf: false,
   showFamilies: true,
+  mood: typeof window !== 'undefined' && /-mood$/.test(location.hash),
   panel: 'none',
   cursor: 'attract',
   uiHidden: false,

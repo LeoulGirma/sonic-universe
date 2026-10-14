@@ -170,6 +170,9 @@ export function buildSongMap(pcm: Float32Array, sr: number, onProgress?: (p: num
   const spec = new SpecCollector(fps / 2, N / sr);
   fam.keepDb = true;
   const prof = new ProfileCollector();
+  const NL = sr >= 32000 ? 32768 : 16384; // long window for key / bass-note chroma
+  const longFrame = new Float32Array(NL);
+  const longFreq = new Float32Array(NL / 2);
   for (let i = 0; i < nFrames; i++) {
     const t = N / sr + i * dt;
     const end = Math.floor(t * sr);
@@ -184,6 +187,11 @@ export function buildSongMap(pcm: Float32Array, sr: number, onProgress?: (p: num
     fam.push(freq, sr / N, f.loudnessDb);
     if (i % 2 === 0) spec.push(freq, sr / N, f.loudnessDb);
     if (i % 4 === 0) prof.push(freq, sr / N, f.loudnessDb, SILENCE_DB);
+    if (i % 12 === 0 && end >= NL) {
+      longFrame.set(pcm.subarray(end - NL, end));
+      fftMagDb(longFrame, longFreq);
+      prof.pushLong(longFreq, sr / NL, f.loudnessDb, SILENCE_DB);
+    }
     if (onProgress && i % 1500 === 0) onProgress(0.8 * (i / nFrames));
   }
   const tOf = (i: number) => N / sr + i * dt;

@@ -22,7 +22,9 @@ export interface RawProfile {
   chordRate: number; // harmony hue changes per second
   mode: number; // major − minor key-profile correlation (−1..1, + = major)
   keyClarity: number; // best key-profile correlation 0..1
-  third: number; // major − minor third above the bass-weighted tonic (−1..1, + = major)
+  third: number;
+  flat: number; // median spectral flatness 200 Hz – 8 kHz (0 tonal … 1 noisy/distorted)
+  hiShare: number; // median share of power above 3 kHz (air, sizzle) // major − minor third above the bass-weighted tonic (−1..1, + = major)
   chroma: number[]; // 12, mean normalised pitch-class profile (C = 0)
   bassChroma: number[]; // 12, same for 40–200 Hz
   drops: number; // drops per minute
@@ -55,6 +57,8 @@ const pct = (v: number[], p: number) => {
 /** per-frame accumulation (called every few analysis frames) */
 export class ProfileCollector {
   private cents: number[] = [];
+  private flats: number[] = [];
+  private his: number[] = [];
   private chroma = new Float64Array(12);
   private bassChroma = new Float64Array(12);
   private pcOf: Int8Array | null = null;
@@ -62,26 +66,40 @@ export class ProfileCollector {
   push(freqDb: Float32Array, binHz: number, loudDb: number, silenceDb: number) {
     if (loudDb <= silenceDb) return;
     const n = freqDb.length;
-    if (!this.pcOf) {
-      this.pcOf = new Int8Array(n).fill(-1);
-      for (let i = 1; i < n; i++) {
-        const f = i * binHz;
-        if (f < 80 || f > 2500) continue;
-        this.pcOf[i] = ((Math.round(12 * Math.log2(f / 440)) % 12) + 12 + 9) % 12; // 0 = C
-      }
-      this.lowOf = new Int8Array(n).fill(-1);
-      for (let i = 1; i < n; i++) {
-        const f = i * binHz;
-        if (f >= 40 && f <= 200) this.lowOf[i] = ((Math.round(12 * Math.log2(f / 440)) % 12) + 12 + 9) % 12;
-      }
-    }
-    let s = 0, w = 0;
-    const fr = new Float64Array(12);
-    const lo = new Float64Array(12);
+    let s = 0, w = 0, lg = 0, ar = 0, cnt = 0, hi = 0;
     for (let i = 1; i < n; i++) {
       const p = Math.pow(10, freqDb[i] / 10);
       s += p * i * binHz;
       w += p;
+      const f = i * binHz;
+      if (f >= 200 && f <= 8000) { lg += Math.log(p + 1e-20); ar += p; cnt++; }
+      if (f > 3000) hi += p;
+    }
+    if (cnt && ar > 0) this.flats.push(Math.exp(lg / cnt) / (ar / cnt));
+    if (w > 0) this.his.push(hi / w);
+    if (w > 0) this.cents.push(s / w);
+  }
+
+  /** chroma from a long window (~0.75 s), fine enough to resolve bass notes */
+  pushLong(freqDb: Float32Array, binHz: number, loudDb: number, silenceDb: number) {
+    if (loudDb <= silenceDb) return;
+    const n = freqDb.length;
+    if (!this.pcOf) {
+      const pcOf = (f: number) => ((Math.round(12 * Math.log2(f / 440)) % 12) + 12 + 9) % 12; // 0 = C
+      this.pcOf = new Int8Array(n).fill(-1);
+      this.lowOf = new Int8Array(n).fill(-1);
+      for (let i = 1; i < n; i++) {
+        const f = i * binHz;
+        if (f >= 100 && f <= 2500) this.pcOf[i] = pcOf(f);
+        if (f >= 35 && f <= 220) this.lowOf[i] = pcOf(f);
+      }
+    }
+    const fr = new Float64Array(12);
+    const lo = new Float64Array(12);
+    for (let i = 1; i < n - 1; i++) {
+      // spectral peaks only: the window's skirts would smear a bass note across semitones
+      if (freqDb[i] < freqDb[i - 1] || freqDb[i] < freqDb[i + 1]) continue;
+      const p = Math.pow(10, freqDb[i] / 10);
       const pc = this.pcOf[i];
       if (pc >= 0) fr[pc] += Math.sqrt(p);
       const lc = this.lowOf![i];
@@ -90,7 +108,6 @@ export class ProfileCollector {
     let lt = 0;
     for (let k = 0; k < 12; k++) lt += lo[k];
     if (lt > 0) for (let k = 0; k < 12; k++) this.bassChroma[k] += lo[k] / lt;
-    if (w > 0) this.cents.push(s / w);
     // each frame votes with its normalised chroma, so loud passages don't own the key
     let t = 0;
     for (let k = 0; k < 12; k++) t += fr[k];
@@ -175,6 +192,8 @@ export class ProfileCollector {
       mode: bestMaj - bestMin,
       keyClarity: Math.max(bestMaj, bestMin),
       third,
+      flat: pct(this.flats, 0.5),
+      hiShare: pct(this.his, 0.5),
       chroma: Array.from(C, (x) => x / cs),
       bassChroma: Array.from(B, (x) => x / bs),
       drops: (o.drops / Math.max(1, duration)) * 60,

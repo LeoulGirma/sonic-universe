@@ -27,6 +27,19 @@ export const valleyShared = /* glsl */ `
   uniform float uTime;
   uniform float uNowSpec[32]; // the spectrum at the exact moment you hear
   uniform float uHeave;       // bass punch: sudden rises in the lows (808 hits, drops) lift the land
+  uniform vec4 uGrade;        // song mood: colour tint (rgb) and saturation (w); identity = (1,1,1,1)
+  uniform float uFogK;        // song mood: how far you see (calm songs closer and hazier)
+  uniform vec3 uMoodLo;       // song mood palette: shadows …
+  uniform vec3 uMoodHi;       // … to highlights
+  uniform float uMoodAmt;     // 0 = the regular valley's colours
+  float lum(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
+  vec3 grade(vec3 c) {
+    // recolour by brightness into the song's palette (keeping each pixel's brightness), then saturation and tint
+    float l = lum(c);
+    vec3 p = mix(uMoodLo, uMoodHi, smoothstep(0.02, 0.8, l));
+    c = mix(c, p * (l / max(lum(p), 1e-3)), uMoodAmt);
+    return max(mix(vec3(lum(c)), c, uGrade.w), 0.0) * uGrade.rgb;
+  }
 
   float hash12(vec2 p) {
     vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -227,7 +240,8 @@ export const groundFragment = /* glsl */ `
     // where one landscape gives way to the next, the ground glows softly across the valley
     float mixing = 1.0 - max(max(vW.x, vW.y), max(vW.z, vW.w));
     col += biomeTint * ridge * mixing * 1.2;
-    float fog = 1.0 - exp(-max(vZ, 0.0) / 115.0);
+    col = grade(col);
+    float fog = 1.0 - exp(-max(vZ, 0.0) / (115.0 * uFogK));
     col = mix(col, uHorizon, fog);
     gl_FragColor = vec4(col, 1.0);
   }
@@ -242,13 +256,14 @@ export const skyFragment = /* glsl */ `
   uniform vec3 uHorizon;
   uniform vec3 uTop;
   uniform float uGlow;
+  uniform float uStars;
   varying vec2 vUv;
   float h(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
   void main() {
     float y = vUv.y;
     vec3 col = mix(uHorizon * (1.0 + uGlow), uTop, smoothstep(0.38, 0.95, y));
     vec2 g = floor(gl_FragCoord.xy / 3.0);
-    col += vec3(0.75, 0.8, 1.0) * step(0.9975, h(g)) * (0.25 + 0.5 * h(g + 7.0)) * smoothstep(0.45, 0.8, y);
+    col += vec3(0.75, 0.8, 1.0) * step(0.9975, h(g)) * (0.25 + 0.5 * h(g + 7.0)) * smoothstep(0.45, 0.8, y) * uStars;
     gl_FragColor = vec4(col, 1.0);
   }
 `;
@@ -277,6 +292,7 @@ export const auroraVertex = /* glsl */ `
 `;
 export const auroraFragment = /* glsl */ `
   ${valleyShared}
+  uniform float uGain;      // song mood: how much this element leads
   uniform vec3 uPadsCol;
   uniform float uSeed;
   varying vec2 vA;
@@ -292,9 +308,9 @@ export const auroraFragment = /* glsl */ `
     float shape = smoothstep(0.0, 0.08, v) * pow(1.0 - v, 1.6) * (0.35 + 0.65 * exp(-v * 3.0));
     float edge = smoothstep(1.0, 0.75, abs(vA.x));
     float near = smoothstep(5.0, 20.0, vZ);
-    float fog = exp(-max(vZ, 0.0) / 120.0);
+    float fog = exp(-max(vZ, 0.0) / (120.0 * uFogK));
     vec3 c = mix(uPadsCol, hue2rgb(vHue) * 0.85, 0.3);
-    gl_FragColor = vec4(c * vPads * shape * edge * near * fog * (0.25 + 1.3 * rays) * 0.5, 1.0);
+    gl_FragColor = vec4(grade(c) * uGain * vPads * shape * edge * near * fog * (0.25 + 1.3 * rays) * 0.5, 1.0);
   }
 `;
 
@@ -323,6 +339,7 @@ export const pathVertex = /* glsl */ `
 `;
 export const pathFragment = /* glsl */ `
   ${valleyShared}
+  uniform float uGain;      // song mood: how much this element leads
   uniform vec3 uLeadCol;
   varying float vSide;
   varying float vLead;
@@ -331,10 +348,10 @@ export const pathFragment = /* glsl */ `
   void main() {
     float core = exp(-vSide * vSide * 5.0);
     float near = smoothstep(1.0, 5.0, vZ);
-    float fog = exp(-max(vZ, 0.0) / 130.0);
+    float fog = exp(-max(vZ, 0.0) / (130.0 * uFogK));
     float past = vB < uPos ? 0.35 : 0.8;
     float a = (0.02 + 0.6 * vLead) * core * near * fog * past + nowGlow(vB) * vLead * 0.8;
-    gl_FragColor = vec4(uLeadCol * a, 1.0);
+    gl_FragColor = vec4(grade(uLeadCol) * uGain * a, 1.0);
   }
 `;
 
@@ -365,6 +382,7 @@ export const monoVertex = /* glsl */ `
 `;
 export const monoFragment = /* glsl */ `
   ${valleyShared}
+  uniform float uGain;      // song mood: how much this element leads
   uniform vec3 uHitsCol;
   varying float vY;
   varying float vHits;
@@ -372,12 +390,12 @@ export const monoFragment = /* glsl */ `
   varying float vZ;
   void main() {
     if (vHits < 0.01) discard;
-    float fog = exp(-max(vZ, 0.0) / 120.0);
+    float fog = exp(-max(vZ, 0.0) / (120.0 * uFogK));
     float near = smoothstep(1.0, 6.0, vZ);
     float past = vB < uPos ? 0.35 : 0.6;
     float g = 0.1 + 0.9 * pow(1.0 - vY, 2.0) + 0.6 * smoothstep(0.96, 1.0, vY);
     float k = 0.5 * past + 1.2 * nowGlow(vB);          // a hit flares exactly as it sounds
-    gl_FragColor = vec4(uHitsCol * g * vHits * fog * near * k, 1.0);
+    gl_FragColor = vec4(grade(uHitsCol) * uGain * g * vHits * fog * near * k, 1.0);
   }
 `;
 
@@ -406,6 +424,8 @@ export const dustVertex = /* glsl */ `
   }
 `;
 export const dustFragment = /* glsl */ `
+  ${valleyShared}
+  uniform float uGain;      // song mood: how much this element leads
   uniform vec3 uHatsCol;
   varying float vBr;
   varying float vZ;
@@ -413,7 +433,7 @@ export const dustFragment = /* glsl */ `
     vec2 c = gl_PointCoord - 0.5;
     float k = exp(-dot(c, c) * 16.0);
     float near = smoothstep(1.0, 4.0, vZ);
-    float fog = exp(-max(vZ, 0.0) / 90.0);
-    gl_FragColor = vec4(uHatsCol * k * vBr * near * fog, 1.0);
+    float fog = exp(-max(vZ, 0.0) / (90.0 * uFogK));
+    gl_FragColor = vec4(grade(uHatsCol) * uGain * k * vBr * near * fog, 1.0);
   }
 `;

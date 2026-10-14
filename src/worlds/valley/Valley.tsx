@@ -6,6 +6,7 @@ import { F, FAMILY_INFO } from '../../audio/soundFamilies';
 import { SPEC_BANDS, specFrame } from '../../audio/spectrum';
 import type { SongMap } from '../../audio/songMap';
 import { useStore } from '../../store/useStore';
+import { songMood, type SongMood } from '../../audio/songMood';
 import { cameraOwner, drives, perf, pointer } from '../../engine/frameBus';
 import { Envelope, Spring, expCoef } from '../../audio/dsp';
 import type { Drives } from '../../mapping/drives';
@@ -43,6 +44,58 @@ const GATES = 4;
 const BIOME_COL = ['#8b6bff', '#9ff3ea', '#4b8cff', '#ffb547'].map((c) => new THREE.Color(c));
 
 const COL = FAMILY_INFO.map((f) => new THREE.Color(f.color));
+const HORIZON = '#120d2a';
+const TOP = '#010104';
+
+/**
+ * Song mood: the whole valley set up for this song before its first beat. Energy picks the
+ * camera (calm: high, wide, slow; intense: low, quick), brightness and energy the light (cool
+ * night haze … warm gold, muted … saturated), and what the song is built around picks which
+ * element leads. Everything at 1 / the defaults is the regular valley.
+ */
+interface Look {
+  tint: THREE.Vector3; lo: THREE.Color; hi: THREE.Color; amt: number; sat: number; fogK: number; stars: number; horizon: THREE.Color; top: THREE.Color;
+  heave: number; hits: number; dust: number; aurora: number; path: number; drop: number;
+  camH: number; shotAmp: number; shotRate: number; camTau: number; drift: number;
+}
+const H_CORNERS = { calmDark: '#0a1a44', calmBright: '#3d2347', hotDark: '#3a0a16', hotBright: '#4a2a0a' };
+// the song's palette, shadows → highlights: night ice, dusk peach, ember, gold
+const P_LO = { calmDark: '#1b2a6b', calmBright: '#6a3d8f', hotDark: '#7a0f2a', hotBright: '#b0247a' };
+const P_HI = { calmDark: '#9fd8ff', calmBright: '#ffd2a6', hotDark: '#ff8a3c', hotBright: '#ffe066' };
+type Corner = keyof typeof H_CORNERS;
+const quad = (tab: Record<Corner, string>, e: number, b: number) => {
+  const c = (k: Corner) => new THREE.Color(tab[k]);
+  return c('calmDark').lerp(c('calmBright'), b).lerp(c('hotDark').lerp(c('hotBright'), b), e);
+};
+const lerpN = (a: number, b: number, t: number) => a + (b - a) * t;
+function lookFor(m: SongMood | null): Look {
+  if (!m) {
+    return {
+      tint: new THREE.Vector3(1, 1, 1), lo: new THREE.Color(0x888888), hi: new THREE.Color(0xffffff), amt: 0, sat: 1, fogK: 1, stars: 1, horizon: new THREE.Color(HORIZON), top: new THREE.Color(TOP),
+      heave: 1, hits: 1, dust: 1, aurora: 1, path: 1, drop: 1, camH: 8.5, shotAmp: 1, shotRate: 1, camTau: 0.8, drift: 0,
+    };
+  }
+  const { energy: e, bright: b, traits: t, lead } = m;
+  const lb = (k: keyof SongMood['traits']) => (lead === k ? 0.35 : 0);
+  const horizon = quad(H_CORNERS, e, b);
+  return {
+    tint: new THREE.Vector3(1, 1, 1), lo: quad(P_LO, e, b), hi: quad(P_HI, e, b), amt: 0.8, sat: 1 + 0.3 * e, fogK: 0.85 + 0.4 * e, stars: Math.min(1.8, 0.2 + 1.8 * (1 - e) * (1.1 - 0.6 * b)),
+    horizon, top: horizon.clone().multiplyScalar(0.1),
+    heave: 0.55 + 0.9 * t.bass + lb('bass'), hits: 0.5 + 1.0 * t.groove + lb('groove'), dust: 0.5 + 0.9 * t.groove + lb('groove'),
+    aurora: 0.5 + 0.8 * t.space + 0.4 * t.melody + lb('space'), path: 0.5 + 1.1 * t.melody + lb('melody'), drop: 0.7 + 0.9 * t.arc + lb('arc'),
+    camH: 15 - 9 * e, shotAmp: 0.6 + 0.8 * e, shotRate: 0.5 + 1.2 * e, camTau: 1.4 - 0.9 * e, drift: 6 * (1 - e),
+  };
+}
+function easeLook(cur: Look, tgt: Look, k: number) {
+  cur.tint.lerp(tgt.tint, k);
+  cur.lo.lerp(tgt.lo, k);
+  cur.hi.lerp(tgt.hi, k);
+  cur.horizon.lerp(tgt.horizon, k);
+  cur.top.lerp(tgt.top, k);
+  for (const key of ['amt', 'sat', 'fogK', 'stars', 'heave', 'hits', 'dust', 'aurora', 'path', 'drop', 'camH', 'shotAmp', 'shotRate', 'camTau', 'drift'] as const) {
+    cur[key] = lerpN(cur[key], tgt[key], k);
+  }
+}
 
 /** fractional map-beat position of time t (inverse of beatTime) */
 function beatOf(beats: Float64Array, t: number) {
@@ -160,13 +213,21 @@ export function Valley() {
 
   const nowSpec = useMemo(() => new Float32Array(32), []);
   const heave = useMemo(() => ({ value: 0 }), []);
+  // song mood (the "mood" version): one shared grade and fog distance, a gain per element
+  const look = useMemo(() => ({
+    grade: { value: new THREE.Vector4(1, 1, 1, 1) }, fogK: { value: 1 }, stars: { value: 1 },
+    lo: { value: new THREE.Color() }, hi: { value: new THREE.Color() }, amt: { value: 0 },
+    aurora: { value: 1 }, path: { value: 1 }, monos: { value: 1 }, dust: { value: 1 },
+  }), []);
   const scene = useMemo(() => {
     const defines = { RPB, NROWS };
     const common = () => ({
       uFamTex: { value: tex }, uSpecTex: { value: specTex }, uSectTex: { value: sectTex }, uPos: { value: 0 }, uCam: { value: 0 }, uBase: { value: 0 },
       uSpacing: { value: SPACING }, uTime: { value: 0 }, uNowSpec: { value: nowSpec }, uHeave: heave,
+      uGrade: look.grade, uFogK: look.fogK, uMoodLo: look.lo, uMoodHi: look.hi, uMoodAmt: look.amt,
     });
-    const horizon = new THREE.Color('#120d2a');
+    const horizon = new THREE.Color(HORIZON);
+    const top = new THREE.Color(TOP);
     const vRows = (BEHIND_B + AHEAD_B) * RPB + 1;
 
     // ground
@@ -199,7 +260,7 @@ export function Valley() {
 
     const sky = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
       vertexShader: skyVertex, fragmentShader: skyFragment, depthWrite: false,
-      uniforms: { uHorizon: { value: horizon }, uTop: { value: new THREE.Color('#010104') }, uGlow: { value: 0 } },
+      uniforms: { uHorizon: { value: horizon }, uTop: { value: top }, uGlow: { value: 0 }, uStars: look.stars },
     }));
     sky.frustumCulled = false;
     sky.renderOrder = -10;
@@ -220,7 +281,7 @@ export function Valley() {
     const curtains = Array.from({ length: CURTAINS }, (_, i) => {
       const m = new THREE.Mesh(aGeo, new THREE.ShaderMaterial({
         vertexShader: auroraVertex, fragmentShader: auroraFragment, defines, side: THREE.DoubleSide, ...additive,
-        uniforms: { ...common(), uCb: { value: -1e4 }, uSeed: { value: i * 0.37 }, uPadsCol: { value: COL[F.pads] } },
+        uniforms: { ...common(), uCb: { value: -1e4 }, uSeed: { value: i * 0.37 }, uPadsCol: { value: COL[F.pads] }, uGain: look.aurora },
       }));
       m.frustumCulled = false;
       return m;
@@ -237,7 +298,7 @@ export function Valley() {
     pGeo.setIndex(pIdx);
     const path = new THREE.Mesh(pGeo, new THREE.ShaderMaterial({
       vertexShader: pathVertex, fragmentShader: pathFragment, defines, side: THREE.DoubleSide, ...additive,
-      uniforms: { ...common(), uLeadCol: { value: COL[F.lead] } },
+      uniforms: { ...common(), uLeadCol: { value: COL[F.lead] }, uGain: look.path },
     }));
     path.frustumCulled = false;
     const orb = new THREE.Mesh(new THREE.SphereGeometry(0.32, 20, 14), new THREE.MeshBasicMaterial({ color: COL[F.lead].clone(), ...additive }));
@@ -255,7 +316,7 @@ export function Valley() {
     mGeo.instanceCount = MAX_HITS;
     const monos = new THREE.Mesh(mGeo, new THREE.ShaderMaterial({
       vertexShader: monoVertex, fragmentShader: monoFragment, defines, ...additive,
-      uniforms: { ...common(), uHitsCol: { value: COL[F.hits] } },
+      uniforms: { ...common(), uHitsCol: { value: COL[F.hits] }, uGain: look.monos },
     }));
     monos.frustumCulled = false;
 
@@ -267,7 +328,7 @@ export function Valley() {
     dGeo.setAttribute('dk', new THREE.BufferAttribute(dk, 2));
     const dust = new THREE.Points(dGeo, new THREE.ShaderMaterial({
       vertexShader: dustVertex, fragmentShader: dustFragment, defines, ...additive,
-      uniforms: { ...common(), uHatsCol: { value: COL[F.hats] } },
+      uniforms: { ...common(), uHatsCol: { value: COL[F.hats] }, uGain: look.dust },
     }));
     dust.frustumCulled = false;
 
@@ -289,8 +350,8 @@ export function Valley() {
     // the orb and the gates crowded the centre of the view: the path and the ground carry them now
     group.add(sky, ground, ...curtains, monos, path, dust);
     const mats = [ground, ...curtains, path, monos, dust].map((m) => m.material as THREE.ShaderMaterial);
-    return { group, ground, sky, curtains, path, orb, halo, monos, instAttr, gates, dust, mats, vertsTotal: gk.length / 2 };
-  }, [tex, specTex, sectTex, nowSpec]);
+    return { group, ground, sky, curtains, path, orb, halo, monos, instAttr, gates, dust, mats, horizon, top, vertsTotal: gk.length / 2 };
+  }, [tex, specTex, sectTex, nowSpec, look]);
 
   useEffect(() => () => {
     scene.group.traverse((o) => {
@@ -310,6 +371,7 @@ export function Valley() {
     hitAge: 9, hitStr: 0, lastHitEv: -1, hatAge: 9, hatStr: 0, lastHatEv: -1, hatSeed: 0,
     lowSlow: new Spring(0), punch: 0, heave: new Spring(0), lastDropEv: -1,
     shotH: new Spring(0), shotSide: new Spring(0), shotLook: new Spring(0), chord: new THREE.Color(), chordS: new Spring(),
+    ml: lookFor(null), moodMap: null as SongMap | null, moodTarget: lookFor(null), mood: null as SongMood | null,
   });
 
   useEffect(() => {
@@ -342,6 +404,29 @@ export function Valley() {
     }
     S.t += dt;
     const dd = lastDrives.current ?? d;
+    // song mood: placed once per song map, eased in over a couple of seconds
+    {
+      const map = st.mood && clock.mode === 'map' ? dd.map ?? null : null;
+      if (map !== S.moodMap) {
+        S.moodMap = map;
+        S.mood = map?.profile ? songMood(map.profile) : null;
+        S.moodTarget = lookFor(S.mood);
+      }
+      const L = S.ml;
+      easeLook(L, S.moodTarget, debugEnabled ? 1 : expCoef(dt, 1.2)); // offline shots: no easing
+      look.grade.value.set(L.tint.x, L.tint.y, L.tint.z, L.sat);
+      look.lo.value.copy(L.lo);
+      look.hi.value.copy(L.hi);
+      look.amt.value = L.amt;
+      look.fogK.value = L.fogK;
+      look.stars.value = L.stars;
+      scene.horizon.copy(L.horizon);
+      scene.top.copy(L.top);
+      look.aurora.value = L.aurora;
+      look.path.value = L.path;
+      look.monos.value = L.hits;
+      look.dust.value = L.dust;
+    }
     // with a song map the now line sits just ahead; live it sits near the horizon
     S.nowB += ((clock.mode === 'map' ? NOW_MAP : NOW_LIVE) - S.nowB) * expCoef(dt, 1.5);
     const camB = clock.pos - S.nowB;
@@ -427,16 +512,16 @@ export function Valley() {
       const slow = S.lowSlow.step(low, dt, 0.8);
       S.punch = Math.max(S.punch * Math.exp(-dt / 0.28), Math.max(0, low - slow - 0.04) * 3.2);
       if (S.lastDropEv < 0) S.lastDropEv = d.dropEvents;
-      if (d.dropEvents !== S.lastDropEv) { S.lastDropEv = d.dropEvents; S.punch = Math.max(S.punch, 1.4); }
-      heave.value = S.heave.step(Math.min(1.6, S.punch + 0.25 * low), dt, 3.5);
+      if (d.dropEvents !== S.lastDropEv) { S.lastDropEv = d.dropEvents; S.punch = Math.max(S.punch, 1.4 * S.ml.drop); }
+      heave.value = S.heave.step(Math.min(1.6 * S.ml.heave, (S.punch + 0.25 * low) * S.ml.heave), dt, 3.5);
     }
     // hits and hats light the near ridges
     if (S.lastHitEv < 0) { S.lastHitEv = d.fam.events[F.hits]; S.lastHatEv = d.fam.events[F.hats]; }
     if (d.fam.events[F.hits] !== S.lastHitEv) { S.lastHitEv = d.fam.events[F.hits]; S.hitAge = 0; S.hitStr = Math.min(1, 0.3 + d.fam.hit[F.hits]); }
     if (d.fam.events[F.hats] !== S.lastHatEv) { S.lastHatEv = d.fam.events[F.hats]; S.hatAge = 0; S.hatStr = Math.min(1, 0.3 + d.fam.hit[F.hats]); S.hatSeed = (S.hatSeed + 17.3) % 1000; }
     S.hitAge += dt; S.hatAge += dt;
-    gu.uHitAge.value = S.hitAge; gu.uHitStr.value = S.hitStr;
-    gu.uHatAge.value = S.hatAge; gu.uHatStr.value = S.hatStr; gu.uHatSeed.value = S.hatSeed;
+    gu.uHitAge.value = S.hitAge; gu.uHitStr.value = S.hitStr * S.ml.hits;
+    gu.uHatAge.value = S.hatAge; gu.uHatStr.value = Math.min(1.5, S.hatStr * S.ml.dust); gu.uHatSeed.value = S.hatSeed;
     // the chord's colour (circle of fifths hue), eased
     const tonal = S.chordS.step(d.fam.hueStrength, dt, 0.4);
     S.chord.setHSL(d.fam.hue, 0.7, 0.62).multiplyScalar(Math.min(1, tonal * 1.6));
@@ -470,12 +555,14 @@ export function Valley() {
     // a different shot for each kind of section (the same shot when it returns): low glide, high
     // crane, drift left, drift right; eased over several seconds. Live: a new shot every 32 beats.
     const SHOTS = [[0, 0, 0], [6, 0, -3.5], [-1.5, 6, 1.5], [3, -7, -1]];
+    const L = S.ml;
     let shotIdx = Math.floor(clock.pos / 32) % SHOTS.length;
     const shotSecs = clock.mode === 'map' ? dd.map?.sections ?? [] : [];
     for (const sec of shotSecs) if (sec.startBeat + clock.drift <= camB) shotIdx = sec.label % SHOTS.length;
     const [sh, ss, sl] = SHOTS[shotIdx];
-    const shotH = S.shotH.step(sh, dt, 0.12), shotSide = S.shotSide.step(ss, dt, 0.1), shotLook = S.shotLook.step(sl, dt, 0.12);
-    S.camX += (pathX(camB) + shotSide - S.camX) * expCoef(dt, 0.8);
+    const shotH = S.shotH.step(sh * L.shotAmp, dt, 0.12 * L.shotRate), shotSide = S.shotSide.step(ss * L.shotAmp, dt, 0.1 * L.shotRate), shotLook = S.shotLook.step(sl * L.shotAmp, dt, 0.12 * L.shotRate);
+    const drift = L.drift * Math.sin(S.t * 0.07); // calm songs: a slow sideways drift
+    S.camX += (pathX(camB) + shotSide + drift - S.camX) * expCoef(dt, L.camTau);
     const ahead = camB + S.nowB + 10;
     const tgt = new THREE.Vector3(
       pathX(ahead) * 0.8 + S.camX * 0.2 + (pointer.over && !st.cinematic ? pointer.ndc.x * 30 : 0),
@@ -483,7 +570,7 @@ export function Valley() {
       -(S.nowB + 10) * SPACING,
     );
     S.look.lerp(tgt, expCoef(dt, 0.7));
-    cam.position.set(S.camX, S.camY.step(8.5 + 2.2 * lift + shotH, dt, 0.25), 0);
+    cam.position.set(S.camX, S.camY.step(L.camH + 2.2 * lift + shotH, dt, 0.25), 0);
     cam.up.set(0, 1, 0);
     cam.lookAt(S.look);
     const fov = size.width < size.height ? 76 : 64;

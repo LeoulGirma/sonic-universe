@@ -75,6 +75,12 @@ For files, the song map computes all of this with **centred** medians (it looks 
 
 The **legend** (bottom right, toggle with **I**) shows all six families live in every world, in the colours World C uses.
 
+### Song mood (`#valley-mood`, toggle with **M**)
+
+While the song map is built, a **song profile** is measured (`src/audio/songProfile.ts`): loudness and dynamics, brightness, tempo and pulse, hit and note rates, how the energy splits across the six families, the key's major/minor colour from a long-window chroma (bass notes resolved), chord-change rate, drops and breakdowns. `songMood.ts` places those against a **reference library** (`libraryRef.ts`: 21-point quantile tables from 241 real songs, built by `scripts/build-library-ref.py` from `scripts/profile-lib.ts` output), giving energy and brightness evenly spread over 0..1 and what the song is built around (bass, groove, melody, space, arc).
+
+With mood on, Sound Valley sets itself up for the song: the colour palette (night ice, dusk peach, ember, gold) and saturation from brightness and energy; the camera from energy (calm: high, wide, slow drift; intense: low, quick); and the leading element from the song's character (bass heaves the ground harder, groove strengthens sweeps and glints, melody brightens the melody path, space the aurora, arc the drops). The transport shows the reading, e.g. "Fierce, bass-led". Mood off is the regular valley, unchanged.
+
 ## World C: Geometric Intelligence
 
 Every sound family builds its own part of one architecture, in its legend colour (`src/worlds/geometric/`): **kick** pulses the red core and sends a wire shell outward on every kick; **hits** throw orange shards from the core; **hats** light points of a gold geodesic lattice; **bass** raises a violet skyline, a radial record of the bass line with one column per sixteenth note when the tempo is known (64 columns = the last four bars); **pads** construct three teal shells edge by edge while sustained sound holds, dissolve them when it stops, and turn them on each chord change (the harmony tints the teal); **lead** draws a pink ribbon around the structure at the melody's pitch, leaving a marker on each new note. Drops answer with everything at once. This is art direction, not physics. The simulation state is pure TypeScript (`geoState.ts`, 4 tests: each family drives its own part and only that part).
