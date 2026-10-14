@@ -142,7 +142,7 @@ export const useStore = create<AppState>((set) => ({
   cinematic: typeof window === 'undefined' || !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches,
   frozen: false,
   showPerf: false,
-  showFamilies: true,
+  showFamilies: false,
   mood: typeof window !== 'undefined' && /-mood$/.test(location.hash),
   panel: 'none',
   cursor: 'attract',
