@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { audioEngine, AudioEngine } from '../audio/AudioEngine';
+import { audioEngine, AudioEngine, type MixState } from '../audio/AudioEngine';
 import { renderDemoTrack } from '../audio/demoTrack';
 import { PALETTES } from '../engine/palettes';
 import { drives, features, perf } from '../engine/frameBus';
 import { IS_MOBILE, LifeParams, LiquidParams, TunnelParams, MAX_DPR, Quality, QUALITY_SIDE, qualityLabel, SimParams, useStore } from '../store/useStore';
 import { WORLDS } from '../worlds/registry';
 import {
-  ICamera, IClose, IExitFull, IFamilies, IFile, IFreeze, IFull, IMic, IPause, IPerf, IPlay, IScreen, ISettings, ISpark, IWorlds,
+  ICamera, IClose, IExitFull, IFamilies, IFile, IFreeze, IFull, IMic, IMix, IPause, IPerf, IPlay, IPlus, IScreen, ISettings, ISkip, ISpark, IWorlds,
 } from './icons';
 import { FAMILY_INFO, NF } from '../audio/soundFamilies';
 import type { SongMood } from '../audio/songMood';
@@ -81,8 +81,9 @@ export function Overlay() {
       e.preventDefault();
       depth = 0;
       setDragging(false);
-      const f = e.dataTransfer?.files?.[0];
-      if (f) void audioEngine.loadFile(f);
+      const fs = Array.from(e.dataTransfer?.files ?? []);
+      if (fs.length > 1 || (fs.length && audioEngine.state.mix)) mixFiles(fs);
+      else if (fs[0]) void audioEngine.loadFile(fs[0]);
     };
     window.addEventListener('dragenter', enter);
     window.addEventListener('dragleave', leave);
@@ -220,18 +221,20 @@ export function Overlay() {
           </p>
           <div className="welcome__actions">
             <FilePick className="btn btn--primary" label="Choose a song"><IFile /> Choose a song</FilePick>
+            <FilePick className="btn" label="Mix several songs" multi><IMix /> Mix several songs</FilePick>
             <button className="btn" onClick={() => void playDemo()}><ISpark /> Play the demo groove</button>
             {AudioEngine.canListenToSystem && (
               <button className="btn" onClick={() => void audioEngine.startSystemAudio()}><IScreen /> Listen to this computer</button>
             )}
             <button className="btn" onClick={() => void audioEngine.startMic()}><IMic /> Listen to the room</button>
           </div>
-          {!IS_MOBILE && <p className="welcome__hint">Or drop an audio file anywhere on this page.</p>}
+          {!IS_MOBILE && <p className="welcome__hint">Or drop an audio file anywhere on this page. Drop several to hear them as one continuous DJ mix.</p>}
         </section>
       )}
       {tr.loading && <div className="loading" role="status">{tr.loadingLabel || 'Loading…'}</div>}
 
       {!empty && <Transport />}
+      {tr.mix && !st.uiHidden && <MixPanel mix={tr.mix} />}
       {!empty && st.showFamilies && !st.uiHidden && <FamilyLegend />}
 
       {st.panel !== 'none' && <SettingsPanel />}
@@ -293,23 +296,32 @@ function BeatRing() {
  * A real file input stretched invisibly over its button, so the tap lands on the input itself.
  * Opening a hidden input from script is ignored by some in-app browsers and embedded pages.
  */
-function FilePick(p: { className: string; label: string; children: React.ReactNode }) {
+function FilePick(p: { className: string; label: string; children: React.ReactNode; multi?: boolean }) {
   return (
     <label className={`filepick ${p.className}`} title={p.label} onPointerDown={() => audioEngine.unlock()}>
       <input
         type="file"
         accept="audio/*,.mp3,.wav,.ogg,.m4a,.flac,.aac,.opus"
+        multiple={p.multi}
         aria-label={p.label}
         onClick={() => audioEngine.unlock()}
         onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) void audioEngine.loadFile(f);
+          const fs = Array.from(e.target.files ?? []);
+          if (p.multi) mixFiles(fs);
+          else if (fs[0]) void audioEngine.loadFile(fs[0]);
           e.target.value = '';
         }}
       />
       {p.children}
     </label>
   );
+}
+
+/** play several songs as a DJ mix (or add them to the one playing); the world mixes with them */
+function mixFiles(files: File[]) {
+  if (!files.length) return;
+  if (!audioEngine.state.mix && MOOD_WORLDS.includes(useStore.getState().world)) setMood(true);
+  void audioEngine.addToMix(files);
 }
 
 const LEAD_WORD = { bass: 'bass-led', groove: 'groove-led', melody: 'melody-led', space: 'spacious', arc: 'big swings' } as const;
@@ -339,6 +351,7 @@ function Transport() {
               {Math.round(tr.mapInfo.bpm)} BPM{tr.mapInfo.drops.length ? `, ${tr.mapInfo.drops.length} drop${tr.mapInfo.drops.length > 1 ? 's' : ''}` : ''}
             </span>
           )}
+          {tr.mix && <MixNext mix={tr.mix} />}
           {moodOn && tr.mapState === 'ready' && tr.mapInfo?.mood && (
             <span className="transport__map transport__mood" title="Song mood: how this song sets up the world (energy and brightness against your library, and what it is built around)">
               {moodWord(tr.mapInfo.mood)}, {LEAD_WORD[tr.mapInfo.mood.lead]}
@@ -383,6 +396,7 @@ function Transport() {
       </div>
       <div className="transport__src">
         <FilePick className="icon" label="Choose another song"><IFile /></FilePick>
+        <FilePick className={`icon ${tr.mix ? 'icon--on' : ''}`} label={tr.mix ? 'Add songs to the mix' : 'Mix several songs'} multi><IMix /></FilePick>
         <button className="icon" aria-label="Play the demo groove" title="Play the demo groove" onClick={() => void playDemo()}><ISpark /></button>
         {AudioEngine.canListenToSystem && (
           <button className={`icon ${tr.source === 'system' ? 'icon--on' : ''}`} aria-label="Listen to this computer" title="Listen to this computer"
@@ -391,6 +405,53 @@ function Transport() {
         <button className={`icon ${tr.source === 'mic' ? 'icon--on' : ''}`} aria-label="Use the microphone" title="Use the microphone" onClick={() => (tr.source === 'mic' ? audioEngine.stopMic() : void audioEngine.startMic())}><IMic /></button>
       </div>
     </footer>
+  );
+}
+
+const KIND_WORD = { beatmatch: 'beatmatched', echo: 'echo out', fade: 'crossfade' } as const;
+
+function MixNext(p: { mix: MixState }) {
+  const m = p.mix;
+  const next = m.tracks.find((t) => t.id === m.nextId);
+  if (!next) return <span className="transport__map">Last song in the mix</span>;
+  if (m.mixing) return <span className="transport__map transport__mood">Mixing into {next.name}</span>;
+  if (m.nextIn !== null) return <span className="transport__map" title={next.name}>Next in {fmt(m.nextIn)}, {KIND_WORD[m.kind ?? 'beatmatch']}</span>;
+  return <span className="transport__map" title={next.name}>{next.status === 'ready' ? 'Next song ready' : 'Reading the next song…'}</span>;
+}
+
+function MixPanel(p: { mix: MixState }) {
+  const m = p.mix;
+  const ready = m.tracks.filter((t) => t.status === 'ready').length;
+  return (
+    <aside className="mixq glass chrome" aria-label="Mix queue">
+      <header className="mixq__head">
+        <div>
+          <div className="mixq__title">Mix</div>
+          <div className="mixq__sub">{m.tracks.length} songs{ready < m.tracks.length ? `, reading ${m.tracks.length - ready} more` : ''}</div>
+        </div>
+        <div className="mixq__acts">
+          <button className="icon" title="Mix into the next song now" aria-label="Mix into the next song now" disabled={!m.nextId || m.mixing} onClick={() => audioEngine.mixNow()}><ISkip /></button>
+          <FilePick className="icon" label="Add songs to the mix" multi><IPlus /></FilePick>
+        </div>
+      </header>
+      <ol className="mixq__list">
+        {m.tracks.map((t) => {
+          const cur = t.id === m.currentId, nxt = t.id === m.nextId;
+          return (
+            <li key={t.id} className={`mixq__row ${cur ? 'is-cur' : ''} ${nxt ? 'is-next' : ''}`}>
+              <button className="mixq__name" title={`Play “${t.name}” now`} onClick={() => audioEngine.playFromMix(t.id)}>
+                <span className="mixq__t">{t.name}</span>
+                <span className="mixq__meta">
+                  {t.status === 'ready' ? `${t.bpm > 0 ? `${Math.round(t.bpm)} BPM` : 'free time'}${t.mood ? `, ${moodWord(t.mood)}` : ''}` : t.status === 'analysing' ? 'Reading…' : t.status === 'error' ? 'Couldn’t read this file' : 'Waiting'}
+                </span>
+              </button>
+              {!cur && !nxt && <button className="mixq__btn" title="Play next" aria-label={`Play “${t.name}” next`} onClick={() => audioEngine.playNext(t.id)}>Next</button>}
+              {!cur && <button className="mixq__btn" title="Remove" aria-label={`Remove “${t.name}”`} onClick={() => audioEngine.removeFromMix(t.id)}><IClose size={14} /></button>}
+            </li>
+          );
+        })}
+      </ol>
+    </aside>
   );
 }
 

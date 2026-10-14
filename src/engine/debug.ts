@@ -58,6 +58,8 @@ import { DriveMapper, Drives } from '../mapping/drives';
 import { fftMagDb } from '../audio/fft';
 import { synthDemo } from '../audio/demoTrack';
 import { buildSongMap } from '../audio/songMap';
+import { MixEngine } from '../audio/mix/MixEngine';
+import { planTransition } from '../audio/mix/transition';
 
 let stepper: ((dt: number, d: Drives) => void) | null = null;
 let extraStats: (() => Record<string, number>) | null = null;
@@ -143,9 +145,55 @@ export function synthContrast(sr = 44100, seconds = 40) {
   return data;
 }
 
+/**
+ * Render a DJ transition offline with the real MixEngine on an OfflineAudioContext: the songs
+ * are analysed, A starts `lead` seconds before its planned mix-out and `seconds` of audio are
+ * rendered, ticking the engine every 250 ms. Returns 16-bit stereo WAV bytes and what happened.
+ */
+async function renderMix(urls: string[], seconds = 60, lead = 20, mixNowAt?: number) {
+  const sr = 44100;
+  const blobs = await Promise.all(urls.map(async (u) => (await fetch(u)).blob()));
+  const maps = await Promise.all(blobs.map(async (b) => {
+    const buf = await new OfflineAudioContext(1, 1, 22050).decodeAudioData(await b.arrayBuffer());
+    const mono = new Float32Array(buf.length);
+    for (let c = 0; c < buf.numberOfChannels; c++) { const ch = buf.getChannelData(c); for (let i = 0; i < mono.length; i++) mono[i] += ch[i] / buf.numberOfChannels; }
+    return buildSongMap(mono, buf.sampleRate);
+  }));
+  const ctx = new OfflineAudioContext(2, sr * seconds, sr);
+  const log: string[] = [];
+  const mix = new MixEngine(ctx as unknown as AudioContext, ctx.destination, {
+    onSwap: (t) => log.push(`${ctx.currentTime.toFixed(2)}s swap -> ${t.name}`),
+    onEnd: () => log.push(`${ctx.currentTime.toFixed(2)}s end`),
+    onChange: () => {},
+  });
+  mix.tracks = blobs.map((blob, i) => ({ id: i + 1, name: urls[i], blob, map: maps[i], status: 'ready' as const }));
+  const plan = planTransition(maps[0], maps[1], mixNowAt);
+  for (const t of mix.tracks) await mix.preload(t);
+  await mix.playTrack(mix.tracks[0], mixNowAt !== undefined ? Math.max(0, mixNowAt - lead) : Math.max(0, plan.outT - lead));
+  if (mixNowAt !== undefined) mix.mixNow();
+  for (let t = 0.1; t < seconds - 0.1; t += 0.25) {
+    void ctx.suspend(t).then(() => { mix.tick(); void ctx.resume(); });
+  }
+  const out = await ctx.startRendering();
+  const L = out.getChannelData(0), R = out.getChannelData(1);
+  const wav = new DataView(new ArrayBuffer(44 + L.length * 4));
+  const w = (o: number, s: string) => { for (let i = 0; i < s.length; i++) wav.setUint8(o + i, s.charCodeAt(i)); };
+  w(0, 'RIFF'); wav.setUint32(4, 36 + L.length * 4, true); w(8, 'WAVE'); w(12, 'fmt ');
+  wav.setUint32(16, 16, true); wav.setUint16(20, 1, true); wav.setUint16(22, 2, true); wav.setUint32(24, sr, true);
+  wav.setUint32(28, sr * 4, true); wav.setUint16(32, 4, true); wav.setUint16(34, 16, true); w(36, 'data'); wav.setUint32(40, L.length * 4, true);
+  for (let i = 0; i < L.length; i++) {
+    wav.setInt16(44 + i * 4, Math.max(-1, Math.min(1, L[i])) * 32767, true);
+    wav.setInt16(46 + i * 4, Math.max(-1, Math.min(1, R[i])) * 32767, true);
+  }
+  let bin = '';
+  const bytes = new Uint8Array(wav.buffer);
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return { wav: btoa(bin), plan: { ...plan, bpmA: maps[0].bpm, bpmB: maps[1].bpm }, log };
+}
+
 if (debugEnabled) {
   Object.assign((window as unknown as { __sonic: object }).__sonic, {
-    runOffline, synthDemo, synthContrast,
+    runOffline, synthDemo, synthContrast, renderMix,
     selfTest: () => selfTest?.(),
     worldStats: () => ({ ...(extraStats?.() ?? {}), ...(worldInfo?.() ?? {}) }),
   });

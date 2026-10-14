@@ -371,7 +371,7 @@ export function Valley() {
     hitAge: 9, hitStr: 0, lastHitEv: -1, hatAge: 9, hatStr: 0, lastHatEv: -1, hatSeed: 0,
     lowSlow: new Spring(0), punch: 0, heave: new Spring(0), lastDropEv: -1,
     shotH: new Spring(0), shotSide: new Spring(0), shotLook: new Spring(0), chord: new THREE.Color(), chordS: new Spring(),
-    ml: lookFor(null), moodMap: null as SongMap | null, moodTarget: lookFor(null), mood: null as SongMood | null,
+    ml: lookFor(null), moodMap: null as SongMap | null, moodTarget: lookFor(null), mood: null as SongMood | null, moodTau: 1.2,
   });
 
   useEffect(() => {
@@ -409,11 +409,14 @@ export function Valley() {
       const map = st.mood && clock.mode === 'map' ? dd.map ?? null : null;
       if (map !== S.moodMap) {
         S.moodMap = map;
+        const prev = S.mood;
         S.mood = map?.profile ? songMood(map.profile) : null;
+        // one song mixing into the next: the whole world morphs across the transition
+        S.moodTau = prev && S.mood ? 5 : 1.2;
         S.moodTarget = lookFor(S.mood);
       }
       const L = S.ml;
-      easeLook(L, S.moodTarget, debugEnabled ? 1 : expCoef(dt, 1.2)); // offline shots: no easing
+      easeLook(L, S.moodTarget, debugEnabled ? 1 : expCoef(dt, S.moodTau)); // offline shots: no easing
       look.grade.value.set(L.tint.x, L.tint.y, L.tint.z, L.sat);
       look.lo.value.copy(L.lo);
       look.hi.value.copy(L.hi);

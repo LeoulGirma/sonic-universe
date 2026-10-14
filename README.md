@@ -75,6 +75,12 @@ For files, the song map computes all of this with **centred** medians (it looks 
 
 The **legend** (bottom right, toggle with **I**) shows all six families live in every world, in the colours World C uses.
 
+### DJ mix (Mix several songs)
+
+Choose or drop several songs and they play as one continuous mix (`src/audio/mix/`). Every song is analysed once in a worker and its map cached in IndexedDB. For each pair `transition.ts` reads both maps like a DJ: tempos within ±6% (also at double/half time) are **beatmatched**, leaving the outgoing song at the start of its outro (a phrase boundary, moving through a long final section in whole phrases) and starting the incoming one so its first main section lands as the overlap ends: 32 beats, downbeats locked, basslines swapped on the middle downbeat, the outgoing song thinned by a high-pass as it fades. Tempos too far apart **echo out** over two bars; songs without a usable beat get a long filtered **crossfade**. `MixEngine.ts` runs two decks (trim for loudness matching from the song profile, low shelf, high-/low-pass, echo send, fader) into a limiter, schedules everything on the AudioContext clock, glides the incoming song's tempo back to its own after the mix, and pauses by suspending the context. At the swap the incoming song's map takes over the visuals (the valley keeps travelling instead of jumping, and with song mood on it morphs into the new song's palette and camera over a few seconds). The queue panel shows each song's tempo and mood, what comes next and when; songs can be moved up, removed, played now, or mixed into straight away.
+
+`window.__sonic.renderMix(urls, seconds, lead)` (with `?debug`) renders a transition offline with the real engine on an OfflineAudioContext and returns a WAV.
+
 ### Song mood (`#valley-mood`, toggle with **M**)
 
 While the song map is built, a **song profile** is measured (`src/audio/songProfile.ts`): loudness and dynamics, brightness, tempo and pulse, hit and note rates, how the energy splits across the six families, the key's major/minor colour from a long-window chroma (bass notes resolved), chord-change rate, drops and breakdowns. `songMood.ts` places those against a **reference library** (`libraryRef.ts`: 21-point quantile tables from 241 real songs, built by `scripts/build-library-ref.py` from `scripts/profile-lib.ts` output), giving energy and brightness evenly spread over 0..1 and what the song is built around (bass, groove, melody, space, arc).

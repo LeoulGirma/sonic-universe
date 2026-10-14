@@ -66,6 +66,7 @@ export class TunnelClock {
   private liveStyle = 0;
   private lastDrop = 0;
   private track = -1;
+  private lastMap: unknown = null;
   mode: 'map' | 'live' | 'idle' = 'idle';
 
   update(dt: number, d: Drives) {
@@ -91,10 +92,16 @@ export class TunnelClock {
       this.liveStyle++;
     }
     if (d.map && d.map.beats.length > 1) {
+      const raw = d.beatIndex + d.beatPhase;
+      // a new song's map mid-flight (a DJ mix hand-over): its beats are locked to the old ones, so
+      // keep travelling from where we are instead of jumping to its beat count
+      if (d.map !== this.lastMap && this.lastMap && this.mode === 'map') this.drift = Math.round(this.pos - raw);
+      this.lastMap = d.map;
       this.mode = 'map';
-      this.pos = d.beatIndex + d.beatPhase + this.drift;
+      this.pos = raw + this.drift;
       return;
     }
+    this.lastMap = null;
     this.mode = 'live';
     if (d.bpm > 0) {
       // follow the tracked tempo even while the tracker is unsure (noisy rooms, laptop mics);

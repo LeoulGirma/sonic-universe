@@ -17,3 +17,6 @@ export const IClose = S(<path d="M6 6l12 12M18 6L6 18" />);
 export const IWorlds = S(<><circle cx="12" cy="12" r="8.5" /><ellipse cx="12" cy="12" rx="8.5" ry="3.2" /></>);
 export const IScreen = S(<><rect x="3.5" y="4.5" width="17" height="11.5" rx="1.5" /><path d="M9 20h6M12 16v4" /></>);
 export const IFamilies = S(<><circle cx="6" cy="7" r="1.6" /><path d="M10 7h9" /><circle cx="6" cy="12" r="1.6" /><path d="M10 12h6" /><circle cx="6" cy="17" r="1.6" /><path d="M10 17h8" /></>);
+export const IMix = S(<><circle cx="7.5" cy="12" r="4.5" /><circle cx="7.5" cy="12" r="1" /><circle cx="16.5" cy="12" r="4.5" /><circle cx="16.5" cy="12" r="1" /></>);
+export const ISkip = S(<><path d="M5 6.5l8 5.5-8 5.5z" /><path d="M17.5 6v12" /></>);
+export const IPlus = S(<path d="M12 5v14M5 12h14" />);

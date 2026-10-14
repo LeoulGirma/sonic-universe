@@ -3,6 +3,8 @@ import { FeatureExtractor, MusicFeatures } from './FeatureExtractor';
 import type { SongMap } from './songMap';
 import { useStore } from '../store/useStore';
 import MapWorker from './songMap.worker?worker&inline';
+import { MixEngine, type MixTrack } from './mix/MixEngine';
+import { mapFor } from './mix/library';
 
 export type SourceKind = 'none' | 'file' | 'mic' | 'system';
 
@@ -17,13 +19,31 @@ export interface TransportState {
   /** whole-song analysis for files: 'mapping' while it runs in the background */
   mapState: 'none' | 'mapping' | 'ready' | 'off';
   mapProgress: number;
+  /** the DJ mix queue, when playing one */
+  mix: MixState | null;
   mapInfo: { bpm: number; drops: number[]; breakdowns: [number, number][]; duration: number; confidence: number; sections: { start: number; end: number; label: number; biome: number }[]; mood: SongMood | null } | null;
 }
 
-/** How a file is being played: a media element (streams, low memory) or a decoded buffer. */
-type Backend = 'element' | 'buffer';
+export interface MixState {
+  tracks: { id: number; name: string; status: MixTrack['status']; bpm: number; mood: SongMood | null }[];
+  currentId: number | null;
+  nextId: number | null;
+  /** seconds until the next transition starts, and how it will be done */
+  nextIn: number | null;
+  kind: 'beatmatch' | 'echo' | 'fade' | null;
+  /** inside a transition right now */
+  mixing: boolean;
+}
+
+/** How a file is being played: a media element (streams, low memory), a decoded buffer, or the DJ mix. */
+type Backend = 'element' | 'buffer' | 'mix';
 
 type Listener = (s: TransportState) => void;
+
+const infoOf = (map: SongMap): NonNullable<TransportState['mapInfo']> => ({
+  bpm: map.bpm, drops: map.drops.map((d) => d.t), breakdowns: map.breakdowns, duration: map.duration, confidence: map.beatConfidence,
+  sections: map.sections.map(({ start, end, label, biome }) => ({ start, end, label, biome })), mood: map.profile ? songMood(map.profile) : null,
+});
 
 /**
  * Layer 1 — audio acquisition and analysis.
@@ -53,8 +73,12 @@ export class AudioEngine {
 
   state: TransportState = {
     source: 'none', trackName: '', playing: false, duration: 0, loading: false, loadingLabel: '', error: null,
-    mapState: 'none', mapProgress: 0, mapInfo: null,
+    mapState: 'none', mapProgress: 0, mapInfo: null, mix: null,
   };
+  private mix: MixEngine | null = null;
+  private mixSeq = 0;
+  private mixAnalysing = false;
+  private mixUiAt = 0;
   private worker: Worker | null = null;
 
   constructor() {
@@ -80,6 +104,7 @@ export class AudioEngine {
 
   get currentTime() {
     if (this.state.source !== 'file') return 0;
+    if (this.backend === 'mix') return this.mix?.position ?? 0;
     if (this.backend === 'element') return this.el.currentTime;
     const b = this.buf;
     if (!b) return 0;
@@ -192,11 +217,7 @@ export class AudioEngine {
       if (error) this.set({ mapState: 'off' });
       if (map) {
         this.extractor.setMap(map);
-        this.set({
-          mapState: 'ready',
-          mapProgress: 1,
-          mapInfo: { bpm: map.bpm, drops: map.drops.map((d) => d.t), breakdowns: map.breakdowns, duration: map.duration, confidence: map.beatConfidence, sections: map.sections.map(({ start, end, label, biome }) => ({ start, end, label, biome })), mood: map.profile ? songMood(map.profile) : null },
-        });
+        this.set({ mapState: 'ready', mapProgress: 1, mapInfo: infoOf(map) });
       }
     };
     w.onerror = () => this.set({ mapState: 'off' });
@@ -258,6 +279,7 @@ export class AudioEngine {
 
   async loadBlob(blob: Blob, name: string, autoplay = true) {
     ++this.loadToken;
+    this.endMix();
     this.stopMic();
     this.stopBuffer(false);
     this.buf = null;
@@ -286,6 +308,11 @@ export class AudioEngine {
   async play() {
     if (this.state.source !== 'file') return;
     this.ensureContext();
+    if (this.backend === 'mix') {
+      void this.ctx!.resume();
+      this.set({ playing: true });
+      return;
+    }
     if (this.backend === 'buffer') {
       this.startBuffer();
       return;
@@ -305,6 +332,11 @@ export class AudioEngine {
   }
 
   pause() {
+    if (this.backend === 'mix') {
+      void this.ctx?.suspend(); // freezes the whole mix schedule with it
+      this.set({ playing: false });
+      return;
+    }
     if (this.backend === 'buffer') {
       this.stopBuffer(true);
       this.set({ playing: false });
@@ -319,6 +351,11 @@ export class AudioEngine {
 
   seek(t: number) {
     if (this.state.source !== 'file' || !isFinite(t)) return;
+    if (this.backend === 'mix') {
+      this.mix?.seek(Math.max(0, Math.min(t, this.state.duration - 0.05)));
+      this.extractor.seek();
+      return;
+    }
     if (this.backend === 'buffer') {
       const b = this.buf;
       if (!b) return;
@@ -335,6 +372,7 @@ export class AudioEngine {
   /** Analyse a live stream (microphone or system audio); it is never routed to the speakers. */
   private attachLive(stream: MediaStream, kind: 'mic' | 'system', name: string) {
     const ctx = this.ensureContext();
+    this.endMix();
     this.stopMic();
     this.el.pause();
     this.stopBuffer(true);
@@ -424,6 +462,143 @@ export class AudioEngine {
     this.set({ loading, loadingLabel: loading ? label : '' });
   }
 
+  // ---- DJ mix ---------------------------------------------------------------------------
+
+  /** Add songs to the mix queue; starts the mix if nothing is playing as one. Call from a gesture. */
+  async addToMix(files: File[]) {
+    const audio = files.filter((f) => f.type.startsWith('audio/') || /\.(mp3|wav|ogg|oga|m4a|aac|flac|opus|webm)$/i.test(f.name));
+    if (!audio.length) return this.set({ error: 'None of those look like audio files.' });
+    const ctx = this.ensureContext();
+    const tracks: MixTrack[] = audio.map((f) => ({ id: ++this.mixSeq, name: f.name.replace(/\.[^.]+$/, ''), blob: f, map: null, status: 'queued' }));
+    if (!this.mix) {
+      ++this.loadToken;
+      this.stopMic();
+      this.el.pause();
+      this.stopBuffer(false);
+      this.buf = null;
+      this.elSource?.disconnect();
+      this.analyser!.disconnect();
+      this.analyser!.connect(this.out!);
+      this.backend = 'mix';
+      this.mix = new MixEngine(ctx, this.analyser!, {
+        onSwap: (t) => this.onMixSwap(t),
+        onEnd: () => this.set({ playing: false }),
+        onChange: () => this.publishMix(),
+      });
+      this.mix.tracks.push(...tracks);
+      this.extractor.reset();
+      this.set({ source: 'file', trackName: tracks[0].name, error: null, loading: true, loadingLabel: 'Starting the mix…', duration: 0, playing: false, mapState: 'mapping', mapProgress: 0, mapInfo: null });
+      void this.analyseMix();
+      const ok = await this.mix.playTrack(tracks[0]);
+      if (!ok) this.set({ error: `“${tracks[0].name}” couldn’t be decoded.` });
+      if (ctx.state === 'suspended') void ctx.resume();
+      this.set({ loading: false, loadingLabel: '', playing: ok });
+    } else {
+      this.mix.tracks.push(...tracks);
+      void this.analyseMix();
+    }
+    this.publishMix();
+  }
+
+  /** mix into the next song at the next phrase */
+  mixNow() {
+    this.mix?.mixNow();
+    this.publishMix();
+  }
+
+  /** jump straight to a queued song (no transition) */
+  playFromMix(id: number) {
+    const t = this.mix?.tracks.find((x) => x.id === id);
+    if (t) void this.mix!.playTrack(t);
+  }
+
+  removeFromMix(id: number) {
+    const m = this.mix;
+    if (!m || m.current?.id === id) return;
+    m.tracks = m.tracks.filter((t) => t.id !== id);
+    this.publishMix();
+  }
+
+  /** move a queued song to play next */
+  playNext(id: number) {
+    const m = this.mix;
+    if (!m || !m.current || m.current.id === id) return;
+    const t = m.tracks.find((x) => x.id === id);
+    if (!t) return;
+    m.tracks = m.tracks.filter((x) => x !== t);
+    m.tracks.splice(m.tracks.indexOf(m.current) + 1, 0, t);
+    this.publishMix();
+  }
+
+  private endMix() {
+    if (!this.mix) return;
+    this.mix.dispose();
+    this.mix = null;
+    if (this.backend === 'mix') this.backend = 'element';
+    if (this.ctx?.state === 'suspended') void this.ctx.resume();
+    this.set({ mix: null });
+  }
+
+  private onMixSwap(t: MixTrack) {
+    // the incoming song is now the one you hear: its map drives the visuals from here
+    if (t.map) {
+      this.extractor.setMap(t.map);
+      this.extractor.seek();
+    } else {
+      this.extractor.setMap(null);
+    }
+    this.clock = this.mix?.position ?? 0;
+    this.set({
+      trackName: t.name, duration: this.mix?.duration ?? 0,
+      mapState: t.map ? 'ready' : 'mapping', mapProgress: t.map ? 1 : 0, mapInfo: t.map ? infoOf(t.map) : null,
+    });
+    this.publishMix();
+  }
+
+  /** analyse queued songs one at a time, the playing and next ones first */
+  private async analyseMix() {
+    if (this.mixAnalysing) return;
+    this.mixAnalysing = true;
+    try {
+      for (;;) {
+        const m = this.mix;
+        if (!m) break;
+        const order = [m.current, m.next, ...m.tracks].filter((t): t is MixTrack => !!t);
+        const t = order.find((x) => x.status === 'queued');
+        if (!t) break;
+        t.status = 'analysing';
+        this.publishMix();
+        const map = await mapFor(t.blob as File);
+        if (this.mix !== m) break;
+        t.map = map;
+        t.status = map ? 'ready' : 'error';
+        if (map && m.current === t) m.refreshTrim();
+        if (map && m.current === t && !this.extractor.hasMap) {
+          this.extractor.setMap(map);
+          this.set({ mapState: 'ready', mapProgress: 1, mapInfo: infoOf(map) });
+        }
+        this.publishMix();
+      }
+    } finally {
+      this.mixAnalysing = false;
+    }
+  }
+
+  private publishMix() {
+    const m = this.mix;
+    if (!m) return;
+    this.set({
+      mix: {
+        tracks: m.tracks.map((t) => ({ id: t.id, name: t.name, status: t.status, bpm: t.map?.bpm ?? 0, mood: t.map?.profile ? songMood(t.map.profile) : null })),
+        currentId: m.current?.id ?? null,
+        nextId: m.next?.id ?? null,
+        nextIn: m.untilTransition(),
+        kind: m.plan?.kind ?? null,
+        mixing: !!m.plan && m.untilTransition() === 0,
+      },
+    });
+  }
+
   /** seconds between the playback clock and the sound leaving the speakers */
   outputDelay() {
     const c = this.ctx as (AudioContext & { outputLatency?: number }) | null;
@@ -433,6 +608,11 @@ export class AudioEngine {
 
   /** Pull one analysis frame. Call once per rendered frame, before the worlds update. */
   analyse(dt: number): MusicFeatures {
+    if (this.backend === 'mix' && this.mix && this.state.playing) {
+      this.mix.tick();
+      const now = performance.now();
+      if (now - this.mixUiAt > 400) { this.mixUiAt = now; this.publishMix(); }
+    }
     const a = this.analyser;
     if (!a || this.state.source === 'none' || !this.state.playing) {
       // feed silence so envelopes relax naturally while paused
