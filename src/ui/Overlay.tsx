@@ -180,13 +180,13 @@ export function Overlay() {
           <span className="brand__world"><IWorlds size={14} /> {world.name}</span>
         </button>
         <nav className="tools" aria-label="View controls">
-          <Tool label={st.cinematic ? 'Cinematic camera on (C)' : 'Cinematic camera off (C)'} on={st.cinematic} onClick={() => st.set({ cinematic: !st.cinematic })}><ICamera /></Tool>
-          <Tool label={st.frozen ? 'Resume simulation (Z)' : 'Freeze simulation (Z)'} on={st.frozen} onClick={() => st.set({ frozen: !st.frozen })}><IFreeze /></Tool>
+          <Tool opt label={st.cinematic ? 'Cinematic camera on (C)' : 'Cinematic camera off (C)'} on={st.cinematic} onClick={() => st.set({ cinematic: !st.cinematic })}><ICamera /></Tool>
+          <Tool opt label={st.frozen ? 'Resume simulation (Z)' : 'Freeze simulation (Z)'} on={st.frozen} onClick={() => st.set({ frozen: !st.frozen })}><IFreeze /></Tool>
           <Tool label="Sound families (I)" on={st.showFamilies} onClick={() => st.set({ showFamilies: !st.showFamilies })}><IFamilies /></Tool>
           {MOOD_WORLDS.includes(st.world) && (
             <Tool label={st.mood ? 'Song mood on: the world sets itself up for each song (M)' : 'Song mood off (M)'} on={st.mood} onClick={() => setMood(!st.mood)}><ISpark /></Tool>
           )}
-          <Tool label="Performance (P)" on={st.showPerf} onClick={() => st.set({ showPerf: !st.showPerf })}><IPerf /></Tool>
+          <Tool opt label="Performance (P)" on={st.showPerf} onClick={() => st.set({ showPerf: !st.showPerf })}><IPerf /></Tool>
           <Tool label="Settings (O)" on={st.panel !== 'none'} onClick={() => st.set({ panel: st.panel === 'none' ? 'settings' : 'none' })}><ISettings /></Tool>
           <Tool label={isFull ? 'Exit fullscreen (F)' : 'Fullscreen (F)'} onClick={toggleFullscreen}>{isFull ? <IExitFull /> : <IFull />}</Tool>
         </nav>
@@ -330,9 +330,9 @@ useStore.subscribe((s, prev) => {
   try { if (location.hash !== h && location.hash !== '#mic') history.replaceState(null, '', h); } catch { /* ignore */ }
 });
 
-function Tool(p: { label: string; on?: boolean; onClick: () => void; children: React.ReactNode }) {
+function Tool(p: { label: string; on?: boolean; opt?: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
-    <button className={`icon ${p.on ? 'icon--on' : ''}`} aria-label={p.label} title={p.label} aria-pressed={p.on} onClick={p.onClick}>
+    <button className={`icon ${p.on ? 'icon--on' : ''} ${p.opt ? 'tool--opt' : ''}`} aria-label={p.label} title={p.label} aria-pressed={p.on} onClick={p.onClick}>
       {p.children}
     </button>
   );
@@ -416,9 +416,10 @@ function Transport() {
       <div className="transport__mid">
         <div className="transport__head">
           <div className="transport__title" title={tr.trackName}>{tr.trackName}</div>
-          {tr.mapState === 'mapping' && <span className="transport__map">Mapping song {Math.round(tr.mapProgress * 100)}%</span>}
+          <div className="transport__metas">
+          {tr.mapState === 'mapping' && <span className="transport__map">{tr.mapProgress > 0 ? `Mapping song ${Math.round(tr.mapProgress * 100)}%` : 'Reading the song…'}</span>}
           {tr.mapState === 'ready' && tr.mapInfo && tr.mapInfo.bpm > 0 && (
-            <span className="transport__map" title="Beats, breakdowns and drops come from a whole-song analysis">
+            <span className="transport__map transport__bpm" title="Beats, breakdowns and drops come from a whole-song analysis">
               {Math.round(tr.mapInfo.bpm)} BPM{tr.mapInfo.drops.length ? `, ${tr.mapInfo.drops.length} drop${tr.mapInfo.drops.length > 1 ? 's' : ''}` : ''}
             </span>
           )}
@@ -428,6 +429,7 @@ function Transport() {
               {moodWord(tr.mapInfo.mood)}, {LEAD_WORD[tr.mapInfo.mood.lead]}
             </span>
           )}
+          </div>
         </div>
         {mic ? (
           <div className="transport__live">{tr.source === 'system' ? 'Listening to what this computer plays' : 'Listening through the microphone'}</div>
@@ -468,12 +470,12 @@ function Transport() {
       <div className="transport__src">
         <FilePick className="icon" label="Choose another song"><IFile /></FilePick>
         <FilePick className={`icon ${tr.mix ? 'icon--on' : ''}`} label={tr.mix ? 'Add songs to the mix' : 'Mix several songs'} multi><IMix /></FilePick>
-        <button className="icon" aria-label="Play the demo groove" title="Play the demo groove" onClick={() => void playDemo()}><ISpark /></button>
+        <button className="icon transport__opt" aria-label="Play the demo groove" title="Play the demo groove" onClick={() => void playDemo()}><ISpark /></button>
         {AudioEngine.canListenToSystem && (
-          <button className={`icon ${tr.source === 'system' ? 'icon--on' : ''}`} aria-label="Listen to this computer" title="Listen to this computer"
+          <button className={`icon transport__opt ${tr.source === 'system' ? 'icon--on' : ''}`} aria-label="Listen to this computer" title="Listen to this computer"
             onClick={() => (tr.source === 'system' ? audioEngine.stopMic() : void audioEngine.startSystemAudio())}><IScreen /></button>
         )}
-        <button className={`icon ${tr.source === 'mic' ? 'icon--on' : ''}`} aria-label="Use the microphone" title="Use the microphone" onClick={() => (tr.source === 'mic' ? audioEngine.stopMic() : void audioEngine.startMic())}><IMic /></button>
+        <button className={`icon transport__opt ${tr.source === 'mic' ? 'icon--on' : ''}`} aria-label="Use the microphone" title="Use the microphone" onClick={() => (tr.source === 'mic' ? audioEngine.stopMic() : void audioEngine.startMic())}><IMic /></button>
       </div>
     </footer>
   );
@@ -490,22 +492,30 @@ function MixNext(p: { mix: MixState }) {
   return <span className="transport__map" title={next.name}>{next.status === 'ready' ? 'Next song ready' : 'Reading the next song…'}</span>;
 }
 
+function nextLine(m: MixState) {
+  if (!m.nextId) return '';
+  if (m.mixing) return 'mixing now';
+  return m.nextIn !== null ? `next in ${fmt(m.nextIn)}` : '';
+}
+
 function MixPanel(p: { mix: MixState }) {
   const m = p.mix;
   const ready = m.tracks.filter((t) => t.status === 'ready').length;
+  // on a phone the queue starts folded to one line, so the world stays in view
+  const [open, setOpen] = useState(() => !window.matchMedia?.('(max-width: 720px)').matches);
   return (
-    <aside className="mixq glass chrome" aria-label="Mix queue">
+    <aside className={`mixq glass chrome ${open ? '' : 'mixq--folded'}`} aria-label="Mix queue">
       <header className="mixq__head">
-        <div>
-          <div className="mixq__title">Mix</div>
-          <div className="mixq__sub">{m.tracks.length} songs{ready < m.tracks.length ? `, reading ${m.tracks.length - ready} more` : ''}</div>
-        </div>
+        <button className="mixq__toggle" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+          <div className="mixq__title">Mix <span className="mixq__chev" aria-hidden="true">{open ? '▾' : '▸'}</span></div>
+          <div className="mixq__sub">{m.tracks.length} {m.tracks.length === 1 ? 'song' : 'songs'}{ready < m.tracks.length ? `, reading ${m.tracks.length - ready}` : ''}{nextLine(m) ? ` · ${nextLine(m)}` : ''}</div>
+        </button>
         <div className="mixq__acts">
           <button className="icon" title="Mix into the next song now" aria-label="Mix into the next song now" disabled={!m.nextId || m.mixing} onClick={() => audioEngine.mixNow()}><ISkip /></button>
           <FilePick className="icon" label="Add songs to the mix" multi><IPlus /></FilePick>
         </div>
       </header>
-      <ol className="mixq__list">
+      {open && <ol className="mixq__list">
         {m.tracks.map((t) => {
           const cur = t.id === m.currentId, nxt = t.id === m.nextId;
           return (
@@ -521,7 +531,7 @@ function MixPanel(p: { mix: MixState }) {
             </li>
           );
         })}
-      </ol>
+      </ol>}
     </aside>
   );
 }
