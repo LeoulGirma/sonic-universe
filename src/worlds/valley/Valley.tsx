@@ -190,6 +190,8 @@ export function Valley() {
       uniforms: {
         ...common(), uBassCol: { value: COL[F.bass] }, uPadsCol: { value: COL[F.pads] }, uHatsCol: { value: COL[F.hats] },
         uKickCol: { value: COL[F.kick] }, uHorizon: { value: horizon }, uKickAge: { value: 9 }, uKickStr: { value: 0 }, uNowZ: { value: 0 },
+        uHitsCol: { value: COL[F.hits] }, uHitAge: { value: 9 }, uHitStr: { value: 0 }, uHatAge: { value: 9 }, uHatStr: { value: 0 }, uHatSeed: { value: 0 },
+        uChord: { value: new THREE.Color() },
       },
     }));
     ground.frustumCulled = false;
@@ -304,6 +306,8 @@ export function Valley() {
     t: 0, lastHits: -1, look: new THREE.Vector3(0, 2, -40), camX: 0, kickAge: 9, kickStr: 0, lastKick: -1, nowB: NOW_MAP, orbY: 2,
     lift: new Envelope(2.5, 4), leadHit: 0,
     specS: Array.from({ length: 32 }, () => new Spring()), camY: new Spring(7), glow: new Spring(),
+    hitAge: 9, hitStr: 0, lastHitEv: -1, hatAge: 9, hatStr: 0, lastHatEv: -1, hatSeed: 0,
+    shotH: new Spring(0), shotSide: new Spring(0), shotLook: new Spring(0), chord: new THREE.Color(), chordS: new Spring(),
   });
 
   useEffect(() => {
@@ -414,6 +418,17 @@ export function Valley() {
       u.uTime.value = S.t;
     }
     const gu = (scene.ground.material as THREE.ShaderMaterial).uniforms;
+    // hits and hats light the near ridges
+    if (S.lastHitEv < 0) { S.lastHitEv = d.fam.events[F.hits]; S.lastHatEv = d.fam.events[F.hats]; }
+    if (d.fam.events[F.hits] !== S.lastHitEv) { S.lastHitEv = d.fam.events[F.hits]; S.hitAge = 0; S.hitStr = Math.min(1, 0.3 + d.fam.hit[F.hits]); }
+    if (d.fam.events[F.hats] !== S.lastHatEv) { S.lastHatEv = d.fam.events[F.hats]; S.hatAge = 0; S.hatStr = Math.min(1, 0.3 + d.fam.hit[F.hats]); S.hatSeed = (S.hatSeed + 17.3) % 1000; }
+    S.hitAge += dt; S.hatAge += dt;
+    gu.uHitAge.value = S.hitAge; gu.uHitStr.value = S.hitStr;
+    gu.uHatAge.value = S.hatAge; gu.uHatStr.value = S.hatStr; gu.uHatSeed.value = S.hatSeed;
+    // the chord's colour (circle of fifths hue), eased
+    const tonal = S.chordS.step(d.fam.hueStrength, dt, 0.4);
+    S.chord.setHSL(d.fam.hue, 0.7, 0.62).multiplyScalar(Math.min(1, tonal * 1.6));
+    (gu.uChord.value as THREE.Color).lerp(S.chord, Math.min(1, dt * 1.2));
     gu.uKickAge.value = S.kickAge;
     gu.uKickStr.value = S.kickStr;
     gu.uNowZ.value = -S.nowB * SPACING;
@@ -440,15 +455,23 @@ export function Valley() {
     // camera: follows the winding route, looks along it toward the now line and beyond;
     // fixed field of view, no roll, height rising gently with the song's energy
     const lift = S.lift.step(d.energy, dt);
-    S.camX += (pathX(camB) - S.camX) * expCoef(dt, 0.8);
+    // a different shot for each kind of section (the same shot when it returns): low glide, high
+    // crane, drift left, drift right; eased over several seconds. Live: a new shot every 32 beats.
+    const SHOTS = [[0, 0, 0], [6, 0, -3.5], [-1.5, 6, 1.5], [3, -7, -1]];
+    let shotIdx = Math.floor(clock.pos / 32) % SHOTS.length;
+    const shotSecs = clock.mode === 'map' ? dd.map?.sections ?? [] : [];
+    for (const sec of shotSecs) if (sec.startBeat + clock.drift <= camB) shotIdx = sec.label % SHOTS.length;
+    const [sh, ss, sl] = SHOTS[shotIdx];
+    const shotH = S.shotH.step(sh, dt, 0.12), shotSide = S.shotSide.step(ss, dt, 0.1), shotLook = S.shotLook.step(sl, dt, 0.12);
+    S.camX += (pathX(camB) + shotSide - S.camX) * expCoef(dt, 0.8);
     const ahead = camB + S.nowB + 10;
     const tgt = new THREE.Vector3(
       pathX(ahead) * 0.8 + S.camX * 0.2 + (pointer.over && !st.cinematic ? pointer.ndc.x * 30 : 0),
-      1.5 + (pointer.over && !st.cinematic ? pointer.ndc.y * 14 : 0),
+      1.5 + shotLook + (pointer.over && !st.cinematic ? pointer.ndc.y * 14 : 0),
       -(S.nowB + 10) * SPACING,
     );
     S.look.lerp(tgt, expCoef(dt, 0.7));
-    cam.position.set(S.camX, S.camY.step(6.2 + 2.2 * lift, dt, 0.25), 0);
+    cam.position.set(S.camX, S.camY.step(6.2 + 2.2 * lift + shotH, dt, 0.25), 0);
     cam.up.set(0, 1, 0);
     cam.lookAt(S.look);
     const fov = size.width < size.height ? 76 : 64;

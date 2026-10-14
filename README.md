@@ -126,6 +126,8 @@ Built after the tunnel proved tiring to watch (tight space, zoom pumping, full-s
 
 **The present happens around you, too:** land within about ten beats of the camera moves with the sound you are hearing (bass by the path, highs at the edges, a ripple running through it) and glows with it, and each kick rolls a wave out from under the camera. The timeline still shapes the land; the foreground is no longer a frozen record.
 
+**Keeping it alive over a whole song:** hits send a light running outward along the near ridges and hats strike gold glints on them; ridge brightness follows each 16th's energy steeply (loud ones flare, quiet ones fall dark); the chord's colour (circle of fifths) tints the land near you; and each kind of section gets its own camera shot (low glide, high crane, drift left or right), eased over several seconds and repeated when the section returns (live: a new shot every 32 beats).
+
 Comfort rules: slow travel (2.4 units per beat), fixed field of view, no camera roll, ridges near the route kept below eye level, light on darkness, no full-screen flashes. Checked on a 125 BPM Afrobeats track (LARK x Nahibeatz x Yonta) and F1.
 
 ## World G: Ink in Water

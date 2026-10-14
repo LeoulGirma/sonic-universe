@@ -143,6 +143,7 @@ export const groundVertex = /* glsl */ `
   varying float vRing;
   varying vec4 vW;
   varying float vH;
+  varying float vCx;
   void main() {
     float row = gk.y;
     float b = uBase + row / float(RPB);
@@ -155,7 +156,7 @@ export const groundVertex = /* glsl */ `
     float R = uKickAge * 45.0;
     float wave = exp(-pow((d - R) / 5.0, 2.0)) * pow(max(0.0, 1.0 - uKickAge / 1.4), 2.0) * uKickStr;
     y += wave * (1.4 + 1.6 * sectW(row).z) * smoothstep(2.0, 10.0, ax);
-    vB = b; vU = uAcross(ax); vS = specAt(row, pow(vU, 0.85)); vZ = -z; vRing = wave; vW = sectW(row); vH = y;
+    vB = b; vU = uAcross(ax); vS = specAt(row, pow(vU, 0.85)); vZ = -z; vRing = wave; vW = sectW(row); vH = y; vCx = gk.x * 120.0;
     gl_Position = projectionMatrix * viewMatrix * vec4(x, y, z, 1.0);
   }
 `;
@@ -167,6 +168,13 @@ export const groundFragment = /* glsl */ `
   uniform vec3 uHatsCol;
   uniform vec3 uKickCol;
   uniform vec3 uHorizon;
+  uniform vec3 uHitsCol;
+  uniform float uHitAge;
+  uniform float uHitStr;
+  uniform float uHatAge;
+  uniform float uHatStr;
+  uniform float uHatSeed;
+  uniform vec3 uChord;      // the harmony's colour (circle of fifths), weighted by how tonal it is
   varying float vB;
   varying float vU;
   varying float vS;
@@ -174,6 +182,7 @@ export const groundFragment = /* glsl */ `
   varying float vRing;
   varying vec4 vW;
   varying float vH;
+  varying float vCx;
   void main() {
     // a ridgeline every 16th note, the beats stronger; antialiased, let go where too dense
     float rb = vB * float(RPB);
@@ -188,10 +197,11 @@ export const groundFragment = /* glsl */ `
     // each landscape has its own light: dunes violet-rose, mountains ice, lake deep blue, spires gold
     vec3 biomeTint = vW.x * vec3(0.75, 0.45, 1.0) + vW.y * vec3(0.75, 1.0, 0.98) + vW.z * vec3(0.3, 0.55, 1.0) + vW.w * vec3(1.0, 0.72, 0.3);
     tint = mix(tint, biomeTint, 0.45);
+    tint = mix(tint, uChord, 0.3 * exp(-vZ / 60.0));   // the chord colours the land near you
     // ahead: a dim preview sketch; behind the now line: alive, fading slowly back toward you
     float act = activation(vB);
     float past = mix(0.32, 0.55 + 0.6 * exp(-max(uPos - vB, 0.0) / 10.0), act);
-    float energy = 0.08 + 1.25 * vS * vS;
+    float energy = 0.03 + 1.7 * pow(vS, 2.2);           // loud 16ths flare, quiet ones fall dark
     // landscapes: a lake is calm and mirror-like, mountains catch light on their crests,
     // spires glow along their terraces
     float lineK = 1.0 - 0.55 * vW.z;
@@ -202,6 +212,13 @@ export const groundFragment = /* glsl */ `
     // the now line: what is sounding at this exact moment lights up as it crosses
     col += mix(tint, vec3(1.0), 0.35) * nowGlow(vB) * (0.2 + 1.7 * nowSpec(vU)) * (0.4 + ridge);
     col += uKickCol * vRing * (0.1 + 0.6 * ridge) * (1.0 + 1.5 * vW.z);
+    // hits: a light runs outward along the near ridges; hats: glints strike on them
+    float nearK = exp(-vZ / 45.0);
+    float sweep = exp(-pow((abs(vCx) - uHitAge * 70.0) / 4.0, 2.0)) * pow(max(0.0, 1.0 - uHitAge / 0.9), 2.0) * uHitStr;
+    col += uHitsCol * ridge * sweep * nearK * 1.6;
+    float cell = fract(sin(dot(vec2(floor(vB * 4.0), floor(vCx / 2.5) + uHatSeed), vec2(12.9898, 78.233))) * 43758.5453);
+    float glint = step(cell, 0.05 + 0.12 * uHatStr) * exp(-uHatAge / 0.12) * uHatStr;
+    col += uHatsCol * ridge * glint * nearK * 2.2;
     // near land glows with the sound of this moment
     col += tint * ridge * nowSpec(vU) * exp(-vZ / 28.0) * 0.9;
     // where one landscape gives way to the next, the ground glows softly across the valley
