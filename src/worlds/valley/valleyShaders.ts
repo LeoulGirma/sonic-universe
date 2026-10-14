@@ -118,7 +118,11 @@ export const valleyShared = /* glsl */ `
     float form = dot(W, vec4(dunes, mountains, lake, spires));
     // dormant ahead, alive behind the now line, and breathing with the sound right around it
     float act = activation(b);
-    float breathe = act * exp(-max(uPos - b, 0.0) / 2.5) * nowSpec(u) * amp * 0.6;
+    // the present happens around YOU: land within ~10 beats of the camera moves with the sound you
+    // are hearing (bass by the path, highs at the edges), a ripple running through it toward you
+    float near = exp(-max(b - uCam, 0.0) / 10.0);
+    float ripple = 0.7 + 0.3 * sin(b * 1.6 - uTime * 5.0 + ax * 0.08);
+    float breathe = near * nowSpec(u) * amp * 1.1 * ripple + act * exp(-max(uPos - b, 0.0) / 2.5) * nowSpec(u) * amp * 0.4;
     float valley = 14.0 * smoothstep(16.0, 115.0, ax) * (1.0 - 0.7 * W.z);
     return -2.0 + valley + form * mix(0.18, 1.0, act) + breathe;
   }
@@ -147,8 +151,8 @@ export const groundVertex = /* glsl */ `
     float y = terrain(x, b, row);
     float z = zOf(b);
     // each kick rolls a real wave out across the ground from the now line
-    float d = length(vec2(x - pathX(uPos), z - uNowZ));
-    float R = uKickAge * 38.0;
+    float d = length(vec2(x - pathX(uCam), z));     // waves roll out from under the camera
+    float R = uKickAge * 45.0;
     float wave = exp(-pow((d - R) / 5.0, 2.0)) * pow(max(0.0, 1.0 - uKickAge / 1.4), 2.0) * uKickStr;
     y += wave * (1.4 + 1.6 * sectW(row).z) * smoothstep(2.0, 10.0, ax);
     vB = b; vU = uAcross(ax); vS = specAt(row, pow(vU, 0.85)); vZ = -z; vRing = wave; vW = sectW(row); vH = y;
@@ -198,6 +202,8 @@ export const groundFragment = /* glsl */ `
     // the now line: what is sounding at this exact moment lights up as it crosses
     col += mix(tint, vec3(1.0), 0.35) * nowGlow(vB) * (0.2 + 1.7 * nowSpec(vU)) * (0.4 + ridge);
     col += uKickCol * vRing * (0.1 + 0.6 * ridge) * (1.0 + 1.5 * vW.z);
+    // near land glows with the sound of this moment
+    col += tint * ridge * nowSpec(vU) * exp(-vZ / 28.0) * 0.9;
     // where one landscape gives way to the next, the ground glows softly across the valley
     float mixing = 1.0 - max(max(vW.x, vW.y), max(vW.z, vW.w));
     col += biomeTint * ridge * mixing * 1.2;

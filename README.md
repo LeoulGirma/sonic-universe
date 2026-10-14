@@ -124,6 +124,8 @@ Built after the tunnel proved tiring to watch (tight space, zoom pumping, full-s
 
 **Sync.** With a song map, everything on screen is looked up at the time you *hear*: playback time minus the output latency the browser reports, plus a user "Audio delay" setting for TVs and Bluetooth speakers (persisted). Kicks come from the map's confirmed hits at their exact, latency-corrected times (test: ≥ 90 % within one frame of the true kick); hit monoliths stand at each hit's exact beat position; the now line glows with the spectrum at the exact moment (30 fps), not the 16th-note rows. Live input cannot be delayed this way and runs ahead by the output latency (typically 10–40 ms).
 
+**The present happens around you, too:** land within about ten beats of the camera moves with the sound you are hearing (bass by the path, highs at the edges, a ripple running through it) and glows with it, and each kick rolls a wave out from under the camera. The timeline still shapes the land; the foreground is no longer a frozen record.
+
 Comfort rules: slow travel (2.4 units per beat), fixed field of view, no camera roll, ridges near the route kept below eye level, light on darkness, no full-screen flashes. Checked on a 125 BPM Afrobeats track (LARK x Nahibeatz x Yonta) and F1.
 
 ## World G: Ink in Water
