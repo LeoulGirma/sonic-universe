@@ -581,13 +581,15 @@ async function analyzeTrack(buf) {
   const W = Math.round(fps * 0.4), on2 = new Float32Array(F); let acc = 0;
   for (let f = 0; f < F; f++) { acc += on[f]; if (f >= W) acc -= on[f - W]; on2[f] = Math.max(0, on[f] - acc / Math.min(f + 1, W)); }
   let best = 120, bestScore = -1;
-  // comb over 1-4 beats (a wrong tempo like 4:3 lines up at one lag but not at its multiples), minus
-  // the 1.5-beat lag that a 4:3 error lives on; fixed Billie Eilish 'BIRDS OF A FEATHER' (139 -> 105)
-  // and kept the other test songs
+  // comb over 1-8 beats (a wrong tempo like 4:3 lines up at one lag but not across its multiples),
+  // minus the 0.75 / 1.5 / 2.5-beat lags that 4:3 and 3:2 errors live on, with a broad prior near
+  // 105 BPM. Checked against the main app's tempos on 18 songs: 16 agree (was 14), fixing
+  // 'A Bar Song' (81) and 'Lose Control' (80); APT. and Beautiful Things are still off.
   const xc = L => { let c = 0; for (let f = 0; f + L < F; f++) c += on2[f] * on2[f + L]; return c; };
   for (let bpm = 70; bpm <= 180; bpm += 0.5) {
-    const lag = 60 / bpm * fps, w = Math.exp(-0.5 * Math.pow(Math.log2(bpm / 115) / 0.7, 2));
-    let sc = xc(Math.round(lag)) + 0.8 * xc(Math.round(lag * 2)) + 0.6 * xc(Math.round(lag * 3)) + 0.6 * xc(Math.round(lag * 4)) - 0.3 * xc(Math.round(lag * 1.5));
+    const lag = 60 / bpm * fps, w = Math.exp(-0.5 * Math.pow(Math.log2(bpm / 105) / 0.9, 2));
+    let sc = 0; for (let k = 1; k <= 8; k++) sc += xc(Math.round(lag * k)) / Math.sqrt(k);
+    sc -= 0.4 * xc(Math.round(lag * 1.5)) + 0.2 * xc(Math.round(lag * 2.5)) + 0.2 * xc(Math.round(lag * 0.75));
     sc *= w; if (sc > bestScore) { bestScore = sc; best = bpm; }
   }
   const period = 60 / best * fps;
