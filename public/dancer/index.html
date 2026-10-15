@@ -621,7 +621,8 @@ async function analyzeTrack(buf) {
   // measure reads ~3 dB below a full mono mix, hence +15)
   let pw = 0; for (let f = 0; f < F; f++) pw += eF[f]; const loudDb = 10 * Math.log10(pw / (F * hop) + 1e-12);
   const songE = clamp(0.75 * clamp((loudDb + 15) / 6, 0, 1) + 0.25 * clamp((best - 85) / 50, 0, 1), 0, 1);
-  return { bpm: best, offset, sections, barDur, kpb, songE, loudDb };
+  const barLevel = Array.from(barE, e => Math.min(1.2, e / p95));
+  return { bpm: best, offset, sections, barDur, kpb, songE, loudDb, barLevel };
 }
 async function loadTrack(file) {
   ensureCtx(); stopAll();
@@ -1137,8 +1138,16 @@ function songCharacter() {
   // isn't "busy" all the time; across songs the bass weight still counts a little
   // louder / busier than this song's own recent average, not than its loudest moment so far
   // (against the peak, a song that keeps building read as maximum for minutes)
-  const eRel = CH.eS ? clamp(0.5 + (CH.e / CH.eS - 1) * 1.2, 0, 1) : 0.5, fRel = CH.fluxS ? clamp(0.5 + (CH.flux / CH.fluxS - 1) * 1.0, 0, 1) : 0.5;
+  const eRel = CH.eS ? clamp(0.5 + (CH.e / CH.eS - 1) * 1.2, 0, 1) : 0.5; let fRel = CH.fluxS ? clamp(0.5 + (CH.flux / CH.fluxS - 1) * 1.0, 0, 1) : 0.5;
   let I = clamp(0.55 * eRel + 0.45 * fRel, 0, 1);
+  // a file is known in full: this bar's level against the whole song's loud bars (an intro can't
+  // make the first chorus look like the loudest thing ever)
+  const an = audio.mode === 'file' ? audio.analysis : null;
+  if (an && an.barLevel) {
+    const b = clamp(Math.floor((trackPos() - an.offset) / an.barDur), 0, an.barLevel.length - 1), lv = an.barLevel[b];
+    const whole = clamp((lv - 0.35) / 0.6, 0, 1);
+    I = clamp(0.7 * whole + 0.3 * I, 0, 1); fRel = 0.5 * fRel + 0.5 * whole; CH.age = Math.max(CH.age || 0, 16);
+  }
   // the first seconds of a song: still getting to know it, so start moderate and commit gradually
   const sure = clamp(((CH.age ?? 99) - 2) / 14, 0, 1);
   I = 0.45 + (I - 0.45) * sure;
