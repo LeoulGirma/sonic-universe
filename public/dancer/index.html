@@ -659,11 +659,27 @@ function estimateTempo() {
     if (sc > best) { best = sc; bestBpm = bpm; }
   }
   if (!bestBpm) return;
-  audio.bpm = audio.locked && Math.abs(bestBpm / audio.bpm - 1) < 0.06 ? lerp(audio.bpm, bestBpm, 0.3) : bestBpm;
+  const now = audio.ctx.currentTime;
+  if (audio.locked) {
+    // a different tempo must win three estimates in a row before the dancer changes step
+    if (Math.abs(bestBpm / audio.bpm - 1) >= 0.06) {
+      audio.cand = audio.cand && Math.abs(audio.cand.bpm / bestBpm - 1) < 0.03 ? { bpm: bestBpm, n: audio.cand.n + 1 } : { bpm: bestBpm, n: 1 };
+      if (audio.cand.n < 3) bestBpm = audio.bpm; else audio.locked = false;
+    } else audio.cand = null;
+  }
+  // keep the beat count continuous through a tempo change, then pull the phase gently toward the
+  // kicks instead of snapping (snapping skipped or doubled beats every time the estimate moved)
+  const pos = audio.locked ? (now - audio.grid0) / audio.beat : 0;
+  audio.bpm = audio.locked ? lerp(audio.bpm, bestBpm, 0.3) : bestBpm;
   audio.beat = 60 / audio.bpm;
   let sx = 0, sy = 0; for (const t of k) { const a = 2 * Math.PI * t / audio.beat; sx += Math.cos(a); sy += Math.sin(a); }
-  audio.grid0 = Math.atan2(sy, sx) / (2 * Math.PI) * audio.beat;
-  if (!audio.locked) { audio.locked = true; S.lastBeatIdx = -1; }
+  const target = Math.atan2(sy, sx) / (2 * Math.PI) * audio.beat;
+  if (!audio.locked) { audio.grid0 = target; audio.locked = true; S.lastBeatIdx = -1; audio.cand = null; }
+  else {
+    audio.grid0 = now - pos * audio.beat;
+    let e = ((target - audio.grid0) / audio.beat) % 1; if (e > 0.5) e -= 1; if (e < -0.5) e += 1;
+    audio.grid0 += clamp(e * 0.35, -0.08, 0.08) * audio.beat;
+  }
   $('bpmv').textContent = Math.round(audio.bpm);
   $('nowMeta').textContent = `${audio.mic && audio.mic.kind === 'sys' ? 'This computer' : 'Listening'} · ${Math.round(audio.bpm)} BPM`;
 }
