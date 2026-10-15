@@ -1155,12 +1155,15 @@ function pickMove(sec) {
     // grooves dance mid-sized; only drops reach for the biggest moves
     const tE = S.sec === 'drop' ? 0.6 + 0.4 * C.I : 0.12 + 0.6 * C.I;
     const d2 = (e.e - tE) ** 2 + 0.5 * (e.sh - C.busy) ** 2 + 0.4 * (e.bo - C.bass) ** 2 + 2.5 * l * l;
-    return Math.exp(-d2 / 0.06) + 1e-4;
+    // a dancer doesn't keep coming back to the same step: moves seen in the last few picks are rare
+    const seen = (S.recent || []).lastIndexOf(e.base), fresh = seen < 0 ? 1 : 0.12 + 0.2 * ((S.recent.length - 1 - seen) / 4);
+    return (Math.exp(-d2 / 0.06) + 1e-4) * fresh;
   });
   let x = Math.random() * w.reduce((a, b) => a + b, 0), pick = names[names.length - 1];
   for (let i = 0; i < names.length; i++) { x -= w[i]; if (x <= 0) { pick = names[i]; break; } }
   // half time in sparse, laid-back passages: the same move at half the step rate
   const pe = D.acts[pick]; pe.slow = false;
+  S.recent = [...(S.recent || []), pe.base].slice(-5);
   if (C.busy < 0.35 && C.I < 0.6) { const r2 = pe.P / (audio.beat * stepFit(pe).m * 2); pe.slow = r2 > 0.7 && r2 < 1.45; }
   return pick;
 }
