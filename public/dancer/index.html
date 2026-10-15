@@ -1043,11 +1043,14 @@ function liveBar() {
   let ups = 0; for (let i = Math.max(1, n - 4); i < n; i++) if (e[i] > e[i - 1] * 1.01) ups++;
   const rising = n >= 5 && ups >= 3 && e[n - 1] > e[n - 5] * 1.12;
   S.build = quiet && rising ? Math.min(1, S.build + 0.25) : quiet && S.build > 0 && e[n - 1] >= e[n - 2] * 0.97 ? S.build : Math.max(0, S.build - 0.5);
-  const cand = micSection();
+  let cand = micSection();
+  // a drop is relative: loud and steady is just the groove; a drop is what comes back after a
+  // break or build, and it plays out over a phrase or four before settling into the groove
+  if (cand === 'drop' && (S.sec === 'drop' ? S.barInSec >= 16 : !quiet)) cand = 'groove';
   if (cand !== S.sec) { L.candN = L.cand === cand ? L.candN + 1 : 1; L.cand = cand; } else { L.cand = null; L.candN = 0; }
   const back = quiet && (cand === 'drop' || cand === 'groove') && kicksBar >= 2;
   const onPhrase = (S.barCount - S.phrase0) % 4 === 0;
-  if (back) { const built = S.build > 0.4; S.build = 0; enterSection(built ? 'drop' : cand); L.cand = null; }
+  if (back) { const built = S.build > 0.4 || (S.sec === 'break' && S.barInSec >= 4); S.build = 0; enterSection(built ? 'drop' : 'groove'); L.cand = null; }
   else if (cand !== S.sec && L.candN >= 2 && (onPhrase || L.candN >= 6)) { enterSection(cand); L.cand = null; }
   onBar();
   updateChip();
