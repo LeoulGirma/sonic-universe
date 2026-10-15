@@ -148,6 +148,10 @@ canvas#stage{position:fixed;inset:0;width:100%;height:100%;display:block;touch-a
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg>
       Load a track
     </button>
+    <button class="btn" id="sysBtn" type="button" disabled>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>
+      Listen to this computer
+    </button>
     <button class="btn" id="micBtn" type="button" disabled>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
       Use mic
@@ -173,6 +177,9 @@ canvas#stage{position:fixed;inset:0;width:100%;height:100%;display:block;touch-a
     </div>
     <button class="icon icon--ghost hide-sm" id="demoBtn2" type="button" aria-label="Play demo beat" title="Demo beat">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 12h3l3-8 4 16 3-8h5"/></svg>
+    </button>
+    <button class="icon icon--ghost" id="sysBtn2" type="button" aria-label="Listen to this computer" title="Listen to this computer">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>
     </button>
     <button class="icon icon--ghost" id="micBtn2" type="button" aria-label="Use mic" title="Use mic">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
@@ -453,7 +460,7 @@ function stopAll() {
   if (audio.src) { try { audio.src.onended = null; audio.src.stop(); } catch (e) {} audio.src.disconnect(); audio.src = null; }
   if (audio.mic) { audio.mic.stream.getTracks().forEach(t => t.stop()); audio.mic.node.disconnect(); audio.mic = null; }
   audio.mode = 'none'; audio.kicks = []; audio.locked = false;
-  $('micBtn2').classList.remove('icon--on');
+  $('micBtn2').classList.remove('icon--on'); $('sysBtn2').classList.remove('icon--on');
 }
 
 /* demo synth */
@@ -618,18 +625,27 @@ async function loadTrack(file) {
   }
 }
 /* live mic: tempo and phase are estimated from detected kicks */
-async function startMic() {
+async function startMic() { return startLive('mic'); }
+/* live input: the room through the mic, or (desktop Chrome / Edge) exactly what this computer
+   plays, shared through the screen picker with system audio on; the video track is dropped */
+async function startLive(kind) {
   ensureCtx();
   let stream;
-  try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } }); }
-  catch (err) { blocked('microphone', err); return; }
+  try {
+    if (kind === 'sys') {
+      stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }, systemAudio: 'include', suppressLocalAudioPlayback: false, selfBrowserSurface: 'exclude' });
+      stream.getVideoTracks().forEach(t => t.stop());
+      if (!stream.getAudioTracks().length) { showToast('No sound was shared. Pick “Entire screen” (or the tab playing music) and turn on “Share system audio”.'); setTimeout(hideToast, 5200); return; }
+    } else stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+  } catch (err) { if (err && err.name === 'NotAllowedError' && kind === 'sys') return; blocked(kind === 'sys' ? 'system audio' : 'microphone', err); return; }
   stopAll();
   const node = audio.ctx.createMediaStreamSource(stream);
   node.connect(audio.analyser);
-  audio.mic = { stream, node }; audio.mode = 'mic'; audio.kicks = []; audio.locked = false; audio.bpm = 120; audio.beat = 0.5;
+  audio.mic = { stream, node, kind }; audio.mode = 'mic'; audio.kicks = []; audio.locked = false; audio.bpm = 120; audio.beat = 0.5;
   audio.micE = 0; audio.micPk = 0.02; audio.lastEst = 0;
-  onSourceStarted('Listening', 'Play music near your device · finding the beat');
-  $('micBtn2').classList.add('icon--on');
+  stream.getAudioTracks()[0].addEventListener('ended', () => { if (audio.mic && audio.mic.stream === stream) { stopAll(); $('nowTitle').textContent = 'Stopped'; $('nowMeta').textContent = 'Pick a source'; } });
+  onSourceStarted(kind === 'sys' ? 'This computer' : 'Listening', kind === 'sys' ? 'Hearing what this computer plays · finding the beat' : 'Play music near your device · finding the beat');
+  $(kind === 'sys' ? 'sysBtn2' : 'micBtn2').classList.add('icon--on');
 }
 function estimateTempo() {
   const k = audio.kicks; if (k.length < 6) return;
@@ -649,7 +665,7 @@ function estimateTempo() {
   audio.grid0 = Math.atan2(sy, sx) / (2 * Math.PI) * audio.beat;
   if (!audio.locked) { audio.locked = true; S.lastBeatIdx = -1; }
   $('bpmv').textContent = Math.round(audio.bpm);
-  $('nowMeta').textContent = `Listening · ${Math.round(audio.bpm)} BPM`;
+  $('nowMeta').textContent = `${audio.mic && audio.mic.kind === 'sys' ? 'This computer' : 'Listening'} · ${Math.round(audio.bpm)} BPM`;
 }
 function micSection() {
   const ratio = audio.micE / Math.max(audio.micPk, 1e-4), sinceKick = audio.ctx.currentTime - (audio.kicks[audio.kicks.length - 1] ?? -99);
@@ -1209,7 +1225,10 @@ function onSourceStarted(title, meta) {
 }
 function setPlayIcon() { $('icoPause').style.display = audio.paused ? 'none' : ''; $('icoPlay').style.display = audio.paused ? '' : 'none'; $('playBtn').setAttribute('aria-label', audio.paused ? 'Play' : 'Pause'); }
 $('demoBtn').onclick = $('demoBtn2').onclick = () => startDemo();
-$('micBtn').onclick = $('micBtn2').onclick = () => { if (audio.mode === 'mic') { stopAll(); $('nowTitle').textContent = 'Stopped'; $('nowMeta').textContent = 'Pick a source'; } else startMic(); };
+const canSys = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) && !/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+if (!canSys) { $('sysBtn').hidden = true; $('sysBtn2').hidden = true; }
+$('sysBtn').onclick = $('sysBtn2').onclick = () => { if (audio.mode === 'mic' && audio.mic && audio.mic.kind === 'sys') { stopAll(); $('nowTitle').textContent = 'Stopped'; $('nowMeta').textContent = 'Pick a source'; } else startLive('sys'); };
+$('micBtn').onclick = $('micBtn2').onclick = () => { if (audio.mode === 'mic' && audio.mic && audio.mic.kind === 'mic') { stopAll(); $('nowTitle').textContent = 'Stopped'; $('nowMeta').textContent = 'Pick a source'; } else startMic(); };
 $('mirrorBtn').onclick = $('mirrorBtn2').onclick = () => toggleMirror();
 $('loadBtn').onclick = $('loadBtn2').onclick = () => { ensureCtx(); $('file').click(); };
 $('file').onchange = e => { const f = e.target.files[0]; if (f) loadTrack(f); e.target.value = ''; };
@@ -1310,7 +1329,7 @@ function frame() {
 
 loadDancer().then(() => {
   $('hint').textContent = 'Drag to orbit, pinch or scroll to zoom. Plays best with sound on.';
-  for (const id of ['demoBtn', 'loadBtn', 'micBtn', 'mirrorBtn']) $(id).disabled = false;
+  for (const id of ['demoBtn', 'loadBtn', 'sysBtn', 'micBtn', 'mirrorBtn']) $(id).disabled = false;
 }).catch(err => {
   console.error(err);
   $('hint').textContent = 'The dancer model did not load. Reload the page to try again.';
