@@ -1134,7 +1134,7 @@ function songCharacter() {
   // isn't "busy" all the time; across songs the bass weight still counts a little
   // louder / busier than this song's own recent average, not than its loudest moment so far
   // (against the peak, a song that keeps building read as maximum for minutes)
-  const eRel = CH.eS ? clamp(0.5 + (CH.e / CH.eS - 1) * 1.8, 0, 1) : 0.5, fRel = CH.fluxS ? clamp(0.5 + (CH.flux / CH.fluxS - 1) * 1.6, 0, 1) : 0.5;
+  const eRel = CH.eS ? clamp(0.5 + (CH.e / CH.eS - 1) * 1.2, 0, 1) : 0.5, fRel = CH.fluxS ? clamp(0.5 + (CH.flux / CH.fluxS - 1) * 1.0, 0, 1) : 0.5;
   let I = clamp(0.55 * eRel + 0.45 * fRel, 0, 1);
   // the first seconds of a song: still getting to know it, so start moderate and commit gradually
   const sure = clamp(((CH.age ?? 99) - 2) / 14, 0, 1);
