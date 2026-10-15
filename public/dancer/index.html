@@ -864,20 +864,26 @@ async function loadDancer() {
   const sambaInfo = analyzeStep(samba, B.hips, hipsParentQ);
   const acts = {
     idle: { action: mixer.clipAction(idle), P: idle.duration, t0: 0, ms: [2, 4, 8] },
-    samba: { action: mixer.clipAction(samba), P: sambaInfo.P, t0: sambaInfo.t0, ms: [0.5, 1, 2] },
-    mirror: { action: mixer.clipAction(mirror), P: sambaInfo.P, t0: sambaInfo.t0, ms: [0.5, 1, 2] },
+    samba: { action: mixer.clipAction(samba), ...wholeSteps(samba, sambaInfo), ms: [0.5, 1, 2] },
+    mirror: { action: mixer.clipAction(mirror), ...wholeSteps(mirror, sambaInfo), ms: [0.5, 1, 2] },
   };
   const pools = { calm: ['idle'], groove: ['samba', 'mirror'], drop: ['samba', 'mirror'] };
   for (const mv of movesJson) {
     try {
       const clip = retargetFromDeltas(mv, skel, hipsParentQ);
-      acts[mv.name] = { action: mixer.clipAction(clip), P: clip.duration, t0: 0, ms: [1, 2, 4, 8, 16], label: mv.label };
+      // lock the move's own step (its hip bounce) to the beat, not the whole loop: the loops are
+      // 1.2-6.3 s and forcing one onto 2, 4 or 8 beats sped some up or slowed them by 30-50%
+      const st = analyzeStep(clip, B.hips, hipsParentQ), n = Math.round(clip.duration / st.P);
+      const ok = st.P > 0.25 && st.P < 1.2 && n >= 1 && Math.abs(clip.duration / n / st.P - 1) < 0.12;
+      acts[mv.name] = ok ? { action: mixer.clipAction(clip), ...wholeSteps(clip, st), ms: [0.5, 1, 2], label: mv.label }
+        : { action: mixer.clipAction(clip), P: clip.duration, t0: 0, ms: [1, 2, 4, 8, 16], label: mv.label };
       pools[mv.pool].push(mv.name);
     } catch (e) { console.warn('move', mv.name, e); }
   }
   pools.drop = pools.drop.filter(n => n !== 'samba' || pools.drop.length < 4);
   pools.break = pools.calm;
   D.pools = pools;
+  if (new URLSearchParams(location.search).has('debug')) window.__dancer = { D, S, audio, stepFit };
   for (const k in acts) acts[k].action.play().setEffectiveWeight(k === 'idle' ? 1 : 0);
   Object.assign(D, { ready: true, model, mesh, skel, B, hipsRestQ, body, refl, U, mixer, acts, cur: 'idle', wpos, vBand, nv, idx });
 }
@@ -948,6 +954,12 @@ function retargetFromDeltas(mv, skel, parentQ) {
   return new THREE.AnimationClip(mv.name, F / mv.fps, tracks);
 }
 
+/* a step period that divides the loop exactly, so the step phase never jumps at the loop seam
+   (a jump made the beat lock lurch the move faster or slower for a beat or two) */
+function wholeSteps(clip, st) {
+  const n = Math.max(1, Math.round(clip.duration / st.P)), P = clip.duration / n;
+  return { P, t0: ((st.t0 % P) + P) % P };
+}
 /* sample the clip and find the step period from the hips' vertical bounce */
 function analyzeStep(clip, hips, parentQ) {
   const tr = clip.tracks.find(t => t.name === 'mixamorigHips.position');
@@ -1002,8 +1014,14 @@ const S = {
 };
 function setAction(name, fade = 0.8) {
   if (!D.ready || D.cur === name || !D.acts[name]) return;
-  const next = D.acts[name].action, prev = D.acts[D.cur].action;
-  next.reset(); next.setEffectiveTimeScale(1); next.setEffectiveWeight(1); next.time = D.acts[name].t0;
+  const e = D.acts[name], next = e.action, prev = D.acts[D.cur].action;
+  next.reset(); next.setEffectiveWeight(1);
+  // enter already on the beat, at the tempo, so the new move doesn't rush or drag to catch up
+  const bp = beatPos();
+  if (bp !== null && !audio.paused) {
+    const { m, r } = stepFit(e);
+    next.time = e.t0 + (((bp / m) % 1 + 1) % 1) * e.P; next.setEffectiveTimeScale(r);
+  } else { next.time = e.t0; next.setEffectiveTimeScale(1); }
   next.crossFadeFrom(prev, fade, false); D.cur = name;
 }
 function pickMove(sec) {
@@ -1093,12 +1111,18 @@ function lockPhase(entry, bp) {
   const a = entry.action;
   if (audio.paused) { a.setEffectiveTimeScale(0.12); return; }
   if (bp === null) { a.setEffectiveTimeScale(1); return; }
-  let bestM = entry.ms[0], bestR = 0, bestErr = 1e9;
-  for (const m of entry.ms) { const r = entry.P / (audio.beat * m); const e = Math.abs(Math.log(r)); if (e < bestErr) { bestErr = e; bestM = m; bestR = r; } }
-  const desired = ((bp / bestM) % 1 + 1) % 1;
+  const { m, r } = stepFit(entry);
+  const desired = ((bp / m) % 1 + 1) % 1;
   const actual = (((a.time - entry.t0) / entry.P) % 1 + 1) % 1;
   let err = desired - actual; if (err > 0.5) err -= 1; if (err < -0.5) err += 1;
-  a.setEffectiveTimeScale(bestR * (1 + clamp(err * 1.6, -0.35, 0.35)));
+  // correct gently: a dancer who is a little off eases back over a few steps, not in a lurch
+  a.setEffectiveTimeScale(r * (1 + clamp(err * 0.9, -0.15, 0.15)));
+}
+/* how many beats one step of this move spans, and the speed that fits it to the tempo */
+function stepFit(entry) {
+  let bestM = entry.ms[0], bestR = 1, bestErr = 1e9;
+  for (const m of entry.ms) { const r = entry.P / (audio.beat * m); const e = Math.abs(Math.log(r)); if (e < bestErr) { bestErr = e; bestM = m; bestR = r; } }
+  return { m: bestM, r: bestR };
 }
 
 /* procedural bone layer, applied on top of the clip each frame */
