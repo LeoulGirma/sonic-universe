@@ -604,7 +604,15 @@ async function analyzeTrack(buf) {
   const raw = Array.from(barE, (e, b) => { const en = e / p95, bb = barB[b] / medB; return en > 0.85 && bb > 0.9 ? 'drop' : en < 0.5 ? 'calm' : bb < 0.45 ? 'break' : 'groove'; });
   const sections = []; let cur = raw[0] || 'calm';
   for (let b = 0; b < raw.length; b++) { if (raw[b] !== cur && raw[b + 1] === raw[b]) cur = raw[b]; sections.push(cur); }
-  return { bpm: best, offset, sections, barDur };
+  // the feel: on how many beats does the low end hit? (a kick on every beat ~1, half time ~0.5)
+  const lowOn = new Float32Array(F); for (let f = 1; f < F; f++) lowOn[f] = Math.max(0, Math.log(1e-7 + eL[f]) - Math.log(1e-7 + eL[f - 1]));
+  const hits = []; for (let t = offset; t < dur - 0.1; t += beat) { const c = Math.round(t * fps); let m = 0; for (let f = Math.max(1, c - 3); f <= Math.min(F - 1, c + 3); f++) m = Math.max(m, lowOn[f]); hits.push(m); }
+  const sortedH = [...hits].sort((a, b) => a - b), ref = sortedH[Math.floor(sortedH.length * 0.9)] || 1;
+  // count only where there are kicks at all (intros and breaks have none): a kick on every beat hits
+  // even and odd beats alike; half time puts them on one side
+  let ev = 0, od = 0; hits.forEach((h, i) => { if (h > ref * 0.45) { if (i % 2) od++; else ev++; } });
+  const kpb = ev + od >= 16 ? (2 * Math.min(ev, od)) / (ev + od) : 1;
+  return { bpm: best, offset, sections, barDur, kpb };
 }
 async function loadTrack(file) {
   ensureCtx(); stopAll();
@@ -1239,7 +1247,8 @@ function liveBar() {
 }
 function onBeat(n) {
   // the feel: kicks per beat over the last few bars (about 0.5 = half-time, laid back)
-  if (audio.mode !== 'none') { const kb = Math.min(2, CH.kicks || 0); CH.kicks = 0; CH.kpb = CH.kpb === undefined ? 1 : CH.kpb + (kb - CH.kpb) * 0.06; }
+  if (audio.mode === 'file' && audio.analysis && audio.analysis.kpb !== undefined) CH.kpb = audio.analysis.kpb;
+  else if (audio.mode !== 'none') { const kb = Math.min(2, CH.kicks || 0); CH.kicks = 0; CH.kpb = CH.kpb === undefined ? 1 : CH.kpb + (kb - CH.kpb) * 0.06; }
   if (n === 1 && (S.sec === 'drop' || S.sec === 'groove') && (S.barCount - S.phrase0) % 8 === 0 && S.barCount - (S.lastHoldBar ?? -99) >= 8 && S.snareEnv > 0.5 && songCharacter().I > 0.7) hitPose();
   if (S.sec === 'drop') spots.forEach((s, i) => s.goalCol.copy(PAL_LIST[(n + i * 2) % 4]));
   else if (S.sec === 'groove') { spots[0].goalCol.copy(PAL.bass); spots[1].goalCol.copy(n % 2 ? PAL.mid : PAL.mid2); }
