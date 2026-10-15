@@ -581,10 +581,13 @@ async function analyzeTrack(buf) {
   const W = Math.round(fps * 0.4), on2 = new Float32Array(F); let acc = 0;
   for (let f = 0; f < F; f++) { acc += on[f]; if (f >= W) acc -= on[f - W]; on2[f] = Math.max(0, on[f] - acc / Math.min(f + 1, W)); }
   let best = 120, bestScore = -1;
+  // comb over 1-4 beats (a wrong tempo like 4:3 lines up at one lag but not at its multiples), minus
+  // the 1.5-beat lag that a 4:3 error lives on; fixed Billie Eilish 'BIRDS OF A FEATHER' (139 -> 105)
+  // and kept the other test songs
+  const xc = L => { let c = 0; for (let f = 0; f + L < F; f++) c += on2[f] * on2[f + L]; return c; };
   for (let bpm = 70; bpm <= 180; bpm += 0.5) {
-    const lag = 60 / bpm * fps, w = Math.exp(-0.5 * Math.pow(Math.log2(bpm / 120) / 0.55, 2));
-    let sc = 0; const L = Math.round(lag), L2 = Math.round(lag * 2);
-    for (let f = 0; f + L2 < F; f += 2) sc += on2[f] * (on2[f + L] + 0.5 * on2[f + L2]);
+    const lag = 60 / bpm * fps, w = Math.exp(-0.5 * Math.pow(Math.log2(bpm / 115) / 0.7, 2));
+    let sc = xc(Math.round(lag)) + 0.8 * xc(Math.round(lag * 2)) + 0.6 * xc(Math.round(lag * 3)) + 0.6 * xc(Math.round(lag * 4)) - 0.3 * xc(Math.round(lag * 1.5));
     sc *= w; if (sc > bestScore) { bestScore = sc; best = bpm; }
   }
   const period = 60 / best * fps;
