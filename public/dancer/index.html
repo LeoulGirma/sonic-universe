@@ -900,7 +900,7 @@ async function loadDancer() {
   }
   for (const k in acts) acts[k].base = acts[k].base || (k === 'mirror' ? 'samba' : k);
   moveFeatures(acts, B, hipsParentQ);
-  if (new URLSearchParams(location.search).has('debug')) window.__dancer = { D, S, audio, stepFit, plantFeet, cleanClip, CH, songCharacter, pickMove, get legs() { return D.legs; } };
+  if (new URLSearchParams(location.search).has('debug')) window.__dancer = { D, S, audio, stepFit, plantFeet, cleanClip, CH, songCharacter, pickMove, AC, get legs() { return D.legs; } };
   for (const k in acts) { acts[k].armK = armRoom(acts[k].action.getClip()); acts[k].action.play().setEffectiveWeight(k === 'idle' ? 1 : 0); }
   Object.assign(D, { ready: true, model, mesh, skel, B, hipsRestQ, body, refl, U, mixer, acts, cur: 'idle', wpos, vBand, nv, idx });
 }
@@ -1322,6 +1322,74 @@ function procedural(t, bp) {
   const fl = bands.high * 0.45 * gn * own * (0.4 + 0.6 * S.armRoom);
   rotWorld(B.lHand, RIGHT, Math.sin(t * 13) * fl);
   rotWorld(B.rHand, RIGHT, Math.sin(t * 13 + 1.7) * fl);
+  armChoreo(bp);
+}
+
+/* ---------- arm choreography, built from the music ----------
+   The recorded moves give the legs and body; the arms are choreographed here from what the song
+   is doing, the way a dancer sets arms to an 8-count: a 4-beat pattern of gestures chosen for the
+   section and repeated through the phrase (a new one each phrase), hits landing on the beat,
+   claps and punches on the snare backbeats, larger and slower in sparse music, the reach rising
+   with the melody. It is blended over the recorded arms, more where the move leaves the arms free. */
+// gesture = [upper arm dir, forearm dir] for the LEFT arm in the body frame (x: dancer's left,
+// y: up, z: forward); the right arm mirrors x
+const GEST = {
+  rest: [[0.25, -1, 0.15], [0.1, -1, 0.35]], low: [[0.55, -0.8, 0.3], [0.6, -0.35, 0.7]],
+  clap: [[0.25, -0.35, 0.9], [-0.85, 0.1, 0.55]], point: [[0.6, 0.15, 0.8], [0.6, 0.2, 0.8]],
+  punch: [[0.35, 1, 0.15], [0.3, 1, 0.1]], wave: [[1, 0.1, 0], [0.2, 1, 0.05]],
+  hips: [[0.7, -0.6, -0.2], [-0.6, -0.3, 0.5]], frame: [[0.6, 0.8, 0.1], [-0.25, 1, 0.1]],
+  cross: [[0.3, -0.3, 0.9], [-1, 0.15, 0.3]], reach: [[0.5, 0.45, 0.75], [0.45, 0.55, 0.7]],
+};
+// 4-beat patterns, [left, right] per beat; beats 2 and 4 are the backbeats
+const PATTERNS = {
+  calm: [[['wave', 'rest'], ['wave', 'rest'], ['rest', 'wave'], ['rest', 'wave']], [['low', 'low'], ['reach', 'low'], ['low', 'low'], ['low', 'reach']], [['rest', 'rest'], ['low', 'low'], ['rest', 'rest'], ['wave', 'wave']]],
+  groove: [[['rest', 'point'], ['clap', 'clap'], ['point', 'rest'], ['clap', 'clap']], [['hips', 'hips'], ['punch', 'hips'], ['hips', 'hips'], ['hips', 'punch']],
+    [['low', 'low'], ['cross', 'cross'], ['low', 'low'], ['wave', 'wave']], [['point', 'rest'], ['point', 'rest'], ['rest', 'point'], ['clap', 'clap']], [['reach', 'low'], ['clap', 'clap'], ['low', 'reach'], ['clap', 'clap']]],
+  drop: [[['punch', 'punch'], ['frame', 'frame'], ['punch', 'rest'], ['rest', 'punch']], [['point', 'point'], ['punch', 'punch'], ['clap', 'clap'], ['frame', 'frame']], [['reach', 'reach'], ['punch', 'rest'], ['reach', 'reach'], ['rest', 'punch']]],
+};
+PATTERNS.break = PATTERNS.calm;
+const AC = { pat: null, phrase: -1, wL: new THREE.Vector3(), wR: new THREE.Vector3(), up: [new THREE.Vector3(), new THREE.Vector3()], fo: [new THREE.Vector3(), new THREE.Vector3()], w: 0, init: false };
+const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3(), _L = new THREE.Vector3(), _U = new THREE.Vector3(), _F = new THREE.Vector3(), _qq = new THREE.Quaternion(), _qi = new THREE.Quaternion();
+function aimBone(bone, child, target, w) {
+  bone.getWorldPosition(_a); child.getWorldPosition(_b); _c.subVectors(_b, _a).normalize();
+  _qq.setFromUnitVectors(_c, target); _qi.identity().slerp(_qq, w); rotWorldQ(bone, _qi); bone.updateMatrixWorld(true);
+}
+function armChoreo(bp) {
+  if (!D.fore) { const g = n => D.model.getObjectByName('mixamorig' + n); D.fore = { l: g('LeftForeArm'), r: g('RightForeArm') }; }
+  D.model.updateMatrixWorld(true);
+  const running = audio.mode !== 'none' && !audio.paused;
+  const C = running ? songCharacter() : { I: 0, busy: 0, bass: 0.5 };
+  const secW = { calm: 0.45, break: 0.4, groove: 0.75, drop: 0.9 }[S.sec] ?? 0.5;
+  const goal = running && bp !== null ? secW * clamp((S.armRoom - 0.2) / 0.6, 0, 1) * (1 - M.blend) : 0;
+  AC.w = damp(AC.w, goal, 2, 1 / 60);
+  if (AC.w < 0.01) { AC.init = false; return; }
+  // a fresh pattern each phrase (or when the section changes), held through the phrase
+  const phrase = Math.floor((S.barCount - S.phrase0) / 2) + ':' + S.sec;
+  if (phrase !== AC.phrase || !AC.pat) { const ps = PATTERNS[S.sec] || PATTERNS.groove; AC.pat = ps[Math.floor(Math.random() * ps.length)]; AC.phrase = phrase; }
+  // sparse music: gestures on every other beat, eased; busy: every beat, snapped onto it
+  const slow = C.busy < 0.35 || S.sec === 'calm' || S.sec === 'break';
+  const lead = 0.12; // start moving a little early so the pose lands on the beat
+  const step = slow ? Math.floor((bp + lead) / 2) * 2 : Math.floor(bp + lead);
+  const n = ((step % 4) + 4) % 4;
+  let [gl, gr] = AC.pat[n];
+  // the backbeat answers the snare: if there's no snare hit, soften to the groove pose
+  if ((n === 1 || n === 3) && S.snareEnv < 0.2 && (gl === 'clap' || gr === 'clap')) { gl = gl === 'clap' ? 'low' : gl; gr = gr === 'clap' ? 'low' : gr; }
+  const speed = slow ? 7 : 12 + 10 * C.busy;
+  const lift = (CH.mel - 0.5) * 0.5 * clamp((bands.mid - 0.2) / 0.5, 0, 1); // reach rises with the melody
+  D.B.hips.getWorldQuaternion(_qb).multiply(_q.copy(D.hipsRestQ).invert());
+  _L.set(1, 0, 0).applyQuaternion(_qb); _U.set(0, 1, 0); _F.set(0, 0, 1).applyQuaternion(_qb); _F.y = 0; _F.normalize(); _L.crossVectors(_U, _F).normalize();
+  const body = (v, side, out) => out.copy(_L).multiplyScalar(v[0] * side).addScaledVector(_U, v[1] + lift * (v[1] > -0.5 ? 1 : 0.3)).addScaledVector(_F, v[2]).normalize();
+  const sides = [[gl, 1, D.B.lArm, D.fore.l, D.B.lHand], [gr, -1, D.B.rArm, D.fore.r, D.B.rHand]];
+  sides.forEach(([g, side, arm, fore, hand], i) => {
+    const G = GEST[g];
+    body(G[0], side, _a); body(G[1], side, _b);
+    if (!AC.init) { AC.up[i].copy(_a); AC.fo[i].copy(_b); }
+    const k = 1 - Math.exp(-speed / 60);
+    AC.up[i].lerp(_a, k).normalize(); AC.fo[i].lerp(_b, k).normalize();
+    aimBone(arm, fore, AC.up[i], AC.w);
+    aimBone(fore, hand, AC.fo[i], AC.w);
+  });
+  AC.init = true;
 }
 
 
