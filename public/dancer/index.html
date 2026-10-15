@@ -1103,17 +1103,20 @@ function readCharacter(dt) {
   const all = (bandAvg(30, 150) + bandAvg(300, 2500) + bandAvg(4000, 12000)) / 3;
   CH.e += (all - CH.e) * k; CH.eP = Math.max(CH.e, CH.eP * Math.exp(-dt / 60), 0.02);
   CH.flux += (fl / 400 - CH.flux) * k; CH.fluxP = Math.max(CH.flux, CH.fluxP * Math.exp(-dt / 60), 0.005);
+  const ks = 1 - Math.exp(-dt / 30); CH.fluxS = CH.fluxS === undefined ? CH.flux : CH.fluxS + (CH.flux - CH.fluxS) * ks;
   const b = bandAvg(30, 150), m = bandAvg(300, 2500), bw = b / Math.max(1e-3, b + m);
-  CH.bassW += (bw - CH.bassW) * k; CH.bLo = Math.min(CH.bLo + dt * 0.002, CH.bassW); CH.bHi = Math.max(CH.bHi - dt * 0.002, CH.bassW);
+  CH.bassW += (bw - CH.bassW) * k; CH.bassS = CH.bassS === undefined ? CH.bassW : CH.bassS + (CH.bassW - CH.bassS) * ks;
   // melody register: the loudest pitch between 200 Hz and 1.6 kHz, on a log scale against its range
   let pk = 0, pi = 0; for (let i = Math.ceil(200 / hz); i < 1600 / hz; i++) if (f[i] > pk) { pk = f[i]; pi = i; }
   if (pk > 90) { const l = Math.log2(pi * hz); CH.mLo = Math.min(CH.mLo + dt * 0.02, l); CH.mHi = Math.max(CH.mHi - dt * 0.02, l); CH.mel += (clamp((l - CH.mLo) / Math.max(0.5, CH.mHi - CH.mLo), 0, 1) - CH.mel) * (1 - Math.exp(-dt / 0.18)); }
 }
 function songCharacter() {
-  const eRel = clamp(CH.e / CH.eP, 0, 1), fRel = clamp(CH.flux / CH.fluxP, 0, 1);
+  // busy and bass-heavy are judged against this song's own last half minute, so a dense pop mix
+  // isn't "busy" all the time; across songs the bass weight still counts a little
+  const eRel = clamp(CH.e / CH.eP, 0, 1), fRel = CH.fluxS ? clamp(0.5 + (CH.flux / CH.fluxS - 1) * 1.6, 0, 1) : 0.5;
   let I = clamp((0.55 * eRel + 0.45 * fRel - 0.45) / 0.5, 0, 1);
   if (S.sec === 'calm' || S.sec === 'break') I *= 0.55; else if (S.sec === 'drop') I = Math.max(I, 0.85);
-  const bass = CH.bHi > CH.bLo + 0.02 ? clamp((CH.bassW - CH.bLo) / (CH.bHi - CH.bLo), 0, 1) : 0.5;
+  const bass = CH.bassS !== undefined ? clamp(0.5 + (CH.bassW - CH.bassS) * 4 + (CH.bassS - 0.5) * 0.8, 0, 1) : 0.5;
   return { I, busy: fRel, bass };
 }
 /* Each move's own character from its motion: energy (how fast the body moves), sharpness (how
@@ -1149,7 +1152,9 @@ function pickMove(sec) {
   if (!names.length) return D.cur;
   const w = names.map(n => {
     const e = D.acts[n], l = Math.log(stepFit(e).r);
-    const d2 = (e.e - C.I) ** 2 + 0.5 * (e.sh - C.busy) ** 2 + 0.4 * (e.bo - C.bass) ** 2 + 2.5 * l * l;
+    // grooves dance mid-sized; only drops reach for the biggest moves
+    const tE = S.sec === 'drop' ? 0.6 + 0.4 * C.I : 0.12 + 0.6 * C.I;
+    const d2 = (e.e - tE) ** 2 + 0.5 * (e.sh - C.busy) ** 2 + 0.4 * (e.bo - C.bass) ** 2 + 2.5 * l * l;
     return Math.exp(-d2 / 0.06) + 1e-4;
   });
   let x = Math.random() * w.reduce((a, b) => a + b, 0), pick = names[names.length - 1];
@@ -1190,6 +1195,13 @@ function onBar(bar) {
 /* live: read the song the way a listener does, one bar at a time. Sections change on a phrase
    once the new character has held for two bars; a build (energy climbing bar after bar in a quiet
    part) gathers the dancer in; the kicks coming back after a build is the drop, taken on its downbeat. */
+/* a drop is relative: only what comes back after a break or calm of 4+ bars, and it plays out over
+   16 bars before settling into the groove (a pop chorus is loud, not a drop) */
+function relSection(sec) {
+  const quiet = S.sec === 'break' || S.sec === 'calm';
+  if (sec === 'drop' && (S.sec === 'drop' ? S.barInSec >= 16 : !(quiet && S.barInSec >= 4) || S.barCount < 8)) return 'groove';
+  return sec;
+}
 function liveBar() {
   const L = S.live || (S.live = { e: [], cand: null, candN: 0, kickN: audio.kickTotal || 0 });
   const kicksBar = (audio.kickTotal || 0) - L.kickN; L.kickN = audio.kickTotal || 0;
@@ -1527,7 +1539,7 @@ function frame() {
     const bi = Math.floor(bp);
     if (bi !== S.lastBeatIdx) {
       S.lastBeatIdx = bi; onBeat(((bi % 4) + 4) % 4);
-      if (((bi % 4) + 4) % 4 === 0) { enterSection(fileSection(), bi / 4); onBar(bi / 4); }
+      if (((bi % 4) + 4) % 4 === 0) { enterSection(relSection(fileSection()), bi / 4); onBar(bi / 4); }
     }
     for (const e of live) e.type === 'kick' ? onKick(e.v, now) : onSnare();
   } else if (running && audio.mode === 'mic') {
@@ -1543,7 +1555,7 @@ function frame() {
   const gainGoal = { calm: 0.45, groove: 1, break: 0.55, drop: 1.4 }[S.sec];
   S.gain = damp(S.gain, gainGoal, 2, dt);
   S.drop = damp(S.drop, S.sec === 'drop' ? 1 : 0, 2.5, dt);
-  if (S.sec === 'break') S.dissolveGoal = audio.mode === 'demo' ? clamp(0.15 + S.barInSec / 8 * 0.85, 0, 1) : audio.mode === 'mic' ? 0.25 + 0.7 * S.build : 0.5;
+  if (S.sec === 'break') S.dissolveGoal = audio.mode === 'demo' ? clamp(0.15 + S.barInSec / 8 * 0.85, 0, 1) : audio.mode === 'mic' ? 0.18 + 0.7 * S.build : 0.18;
   else S.dissolveGoal = S.sec === 'calm' ? 0.06 + 0.5 * S.build : 0;
   S.dissolve = damp(S.dissolve, S.dissolveGoal, S.dissolveGoal < S.dissolve ? 7 : 0.9, dt);
   const energy = clamp((bands.bass + bands.mid + bands.high) / 3, 0, 1);
