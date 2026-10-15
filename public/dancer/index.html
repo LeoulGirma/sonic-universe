@@ -1096,6 +1096,7 @@ function setAction(name, fade = 0.8) {
 const CH = { e: 0, eP: 0.05, flux: 0, fluxP: 0.02, bassW: 0.5, bLo: 1, bHi: 0, mel: 0.5, mLo: 1e9, mHi: 0, prev: null };
 function readCharacter(dt) {
   if (!audio.ctx || audio.mode === 'none' || !audio.freq) return;
+  CH.age = (CH.age || 0) + dt;
   const f = audio.freq, hz = audio.ctx.sampleRate / audio.analyser.fftSize;
   let fl = 0; if (CH.prev) for (let i = 2; i < 400; i++) { const d = f[i] - CH.prev[i]; if (d > 0) fl += d; } else CH.prev = new Uint8Array(f.length);
   CH.prev.set(f);
@@ -1115,9 +1116,13 @@ function songCharacter() {
   // isn't "busy" all the time; across songs the bass weight still counts a little
   const eRel = clamp(CH.e / CH.eP, 0, 1), fRel = CH.fluxS ? clamp(0.5 + (CH.flux / CH.fluxS - 1) * 1.6, 0, 1) : 0.5;
   let I = clamp((0.55 * eRel + 0.45 * fRel - 0.45) / 0.5, 0, 1);
+  // the first seconds of a song: still getting to know it, so start moderate and commit gradually
+  const sure = clamp(((CH.age ?? 99) - 2) / 14, 0, 1);
+  I = 0.45 + (I - 0.45) * sure;
+  const busy = 0.45 + (fRel - 0.45) * sure;
   if (S.sec === 'calm' || S.sec === 'break') I *= 0.55; else if (S.sec === 'drop') I = Math.max(I, 0.85);
   const bass = CH.bassS !== undefined ? clamp(0.5 + (CH.bassW - CH.bassS) * 4 + (CH.bassS - 0.5) * 0.8, 0, 1) : 0.5;
-  return { I, busy: fRel, bass };
+  return { I, busy, bass };
 }
 /* Each move's own character from its motion: energy (how fast the body moves), sharpness (how
    sudden), bounce (hips up and down against side to side), ranked across the set. */
@@ -1497,6 +1502,9 @@ function onSourceStarted(title, meta) {
   $('nowTitle').textContent = title; $('nowMeta').textContent = meta; $('bpmv').textContent = Math.round(audio.bpm);
   audio.paused = false; setPlayIcon();
   S.lastBeatIdx = -1; S.lastBar = -1; S.barInSec = 0;
+  // a new song: forget the last one's levels (they made every song's first 20 s read as "maximum")
+  Object.assign(CH, { e: 0, eP: 0.05, flux: 0, fluxP: 0.02, fluxS: undefined, bassW: 0.5, bassS: undefined, mel: 0.5, mLo: 1e9, mHi: 0, prev: null, age: 0 });
+  S.recent = [];
   if (navigator.wakeLock) navigator.wakeLock.request('screen').catch(() => {});
 }
 function setPlayIcon() { $('icoPause').style.display = audio.paused ? 'none' : ''; $('icoPlay').style.display = audio.paused ? '' : 'none'; $('playBtn').setAttribute('aria-label', audio.paused ? 'Play' : 'Pause'); }
