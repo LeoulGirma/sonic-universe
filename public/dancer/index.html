@@ -642,7 +642,7 @@ async function startLive(kind) {
   const node = audio.ctx.createMediaStreamSource(stream);
   node.connect(audio.analyser);
   audio.mic = { stream, node, kind }; audio.mode = 'mic'; audio.kicks = []; audio.locked = false; audio.bpm = 120; audio.beat = 0.5;
-  audio.micE = 0; audio.micPk = 0.02; audio.lastEst = 0;
+  audio.micE = 0; audio.micPk = 0.02; audio.lastEst = 0; S.live = null; S.build = 0;
   stream.getAudioTracks()[0].addEventListener('ended', () => { if (audio.mic && audio.mic.stream === stream) { stopAll(); $('nowTitle').textContent = 'Stopped'; $('nowMeta').textContent = 'Pick a source'; } });
   onSourceStarted(kind === 'sys' ? 'This computer' : 'Listening', kind === 'sys' ? 'Hearing what this computer plays · finding the beat' : 'Play music near your device · finding the beat');
   $(kind === 'sys' ? 'sysBtn2' : 'micBtn2').classList.add('icon--on');
@@ -738,7 +738,7 @@ function readBands(dt, now) {
   if (audio.mode === 'file' || audio.mode === 'mic') {
     if (raw[0] - bands.avgB > 0.06 && raw[0] > bands.avgB * 1.18 && now - bands.lastKick > 0.24) {
       bands.lastKick = now; out.push({ type: 'kick', v: clamp(nb[0], 0.4, 1) });
-      if (audio.mode === 'mic') { const ct = audio.ctx.currentTime; audio.kicks.push(ct); while (audio.kicks.length && ct - audio.kicks[0] > 12) audio.kicks.shift(); }
+      if (audio.mode === 'mic') { const ct = audio.ctx.currentTime; audio.kicks.push(ct); audio.kickTotal = (audio.kickTotal || 0) + 1; while (audio.kicks.length && ct - audio.kicks[0] > 12) audio.kicks.shift(); }
     }
     const mraw = bandAvg(1500, 5000);
     if (mraw - bands.avgM > 0.05 && mraw > bands.avgM * 1.2 && now - bands.lastSnare > 0.2) { bands.lastSnare = now; out.push({ type: 'snare' }); }
@@ -997,7 +997,7 @@ function buildMirror(model, skel, clip) {
 
 /* ---------- performance state ---------- */
 const S = {
-  sec: 'calm', kickEnv: 0, snareEnv: 0, pulse: 0, dissolve: 0, dissolveGoal: 0, drop: 0, gain: 0.4,
+  sec: 'calm', build: 0, barCount: 0, phrase0: 0, kickEnv: 0, snareEnv: 0, pulse: 0, dissolve: 0, dissolveGoal: 0, drop: 0, gain: 0.4,
   barInSec: 0, lastBeatIdx: -1, lastBar: -1, barsOnMove: 0, emitAcc: 0,
 };
 function setAction(name, fade = 0.8) {
@@ -1014,7 +1014,7 @@ function pickMove(sec) {
 function nextMove(sec, fade) { const m = pickMove(sec); if (m) setAction(m, fade); S.barsOnMove = 0; }
 function enterSection(sec, bar) {
   if (sec === S.sec) return;
-  const was = S.sec; S.sec = sec; S.barInSec = 0;
+  const was = S.sec; S.sec = sec; S.barInSec = 0; S.phrase0 = S.barCount;
   nextMove(sec, sec === 'drop' ? 0.35 : sec === 'groove' ? 0.7 : 1.2);
   if (sec === 'drop' && (was === 'break' || was === 'calm')) reform();
   updateChip();
@@ -1025,11 +1025,32 @@ function reform() {
   const t = performance.now() / 1000; PAL_LIST.forEach((c, i) => ripple(t + i * 0.08, 1.4, c));
 }
 function onBar(bar) {
-  S.barInSec++;
+  S.barInSec++; S.barCount++;
   moveSpots(S.sec === 'drop');
   S.barsOnMove++;
+  // like a dancer, change step on the phrase (every 4 bars from where the section began), not mid-phrase
   const hold = S.sec === 'drop' ? 4 : S.sec === 'groove' ? 4 : 8;
-  if (S.barsOnMove >= hold) nextMove(S.sec, S.sec === 'drop' ? 0.4 : 0.6);
+  if (S.barsOnMove >= hold && (S.barCount - S.phrase0) % 4 === 0) nextMove(S.sec, S.sec === 'drop' ? 0.4 : 0.6);
+}
+/* live: read the song the way a listener does, one bar at a time. Sections change on a phrase
+   once the new character has held for two bars; a build (energy climbing bar after bar in a quiet
+   part) gathers the dancer in; the kicks coming back after a build is the drop, taken on its downbeat. */
+function liveBar() {
+  const L = S.live || (S.live = { e: [], cand: null, candN: 0, kickN: audio.kickTotal || 0 });
+  const kicksBar = (audio.kickTotal || 0) - L.kickN; L.kickN = audio.kickTotal || 0;
+  L.e.push(audio.micE); if (L.e.length > 16) L.e.shift();
+  const e = L.e, n = e.length, quiet = S.sec === 'break' || S.sec === 'calm';
+  let ups = 0; for (let i = Math.max(1, n - 4); i < n; i++) if (e[i] > e[i - 1] * 1.01) ups++;
+  const rising = n >= 5 && ups >= 3 && e[n - 1] > e[n - 5] * 1.12;
+  S.build = quiet && rising ? Math.min(1, S.build + 0.25) : quiet && S.build > 0 && e[n - 1] >= e[n - 2] * 0.97 ? S.build : Math.max(0, S.build - 0.5);
+  const cand = micSection();
+  if (cand !== S.sec) { L.candN = L.cand === cand ? L.candN + 1 : 1; L.cand = cand; } else { L.cand = null; L.candN = 0; }
+  const back = quiet && (cand === 'drop' || cand === 'groove') && kicksBar >= 2;
+  const onPhrase = (S.barCount - S.phrase0) % 4 === 0;
+  if (back) { const built = S.build > 0.4; S.build = 0; enterSection(built ? 'drop' : cand); L.cand = null; }
+  else if (cand !== S.sec && L.candN >= 2 && (onPhrase || L.candN >= 6)) { enterSection(cand); L.cand = null; }
+  onBar();
+  updateChip();
 }
 function onBeat(n) {
   if (S.sec === 'drop') spots.forEach((s, i) => s.goalCol.copy(PAL_LIST[(n + i * 2) % 4]));
@@ -1228,8 +1249,8 @@ function applyMirror(dt) {
 }
 
 /* ---------- UI ---------- */
-const SEC_LABEL = { calm: ['Calm', 'var(--ink-dim)'], groove: ['Groove', 'var(--mid)'], break: ['Break', 'var(--mid2)'], drop: ['Drop', 'var(--high)'] };
-function updateChip() { const [l, c] = SEC_LABEL[S.sec]; const el = $('chip'); el.textContent = l; el.style.setProperty('--chip', c); el.style.borderColor = S.sec === 'calm' ? '' : c; }
+const SEC_LABEL = { build: ['Build', 'var(--mid2)'], calm: ['Calm', 'var(--ink-dim)'], groove: ['Groove', 'var(--mid)'], break: ['Break', 'var(--mid2)'], drop: ['Drop', 'var(--high)'] };
+function updateChip() { const [l, c] = SEC_LABEL[S.build > 0.4 && (S.sec === 'break' || S.sec === 'calm') ? 'build' : S.sec]; const el = $('chip'); el.textContent = l; el.style.setProperty('--chip', c); el.style.borderColor = S.sec === 'calm' ? '' : c; }
 function showToast(m) { const el = $('toast'); el.textContent = m; el.hidden = false; }
 function hideToast() { $('toast').hidden = true; }
 function onSourceStarted(title, meta) {
@@ -1289,7 +1310,7 @@ function frame() {
     if (audio.ctx.currentTime - audio.lastEst > 1) { audio.lastEst = audio.ctx.currentTime; estimateTempo(); }
     if (bp !== null) {
       const bi = Math.floor(bp);
-      if (bi !== S.lastBeatIdx) { S.lastBeatIdx = bi; const n = ((bi % 4) + 4) % 4; onBeat(n); if (n === 0) { enterSection(micSection()); onBar(bi / 4); } }
+      if (bi !== S.lastBeatIdx) { S.lastBeatIdx = bi; const n = ((bi % 4) + 4) % 4; onBeat(n); if (n === 0) liveBar(); }
     } else if (now - (S.lastFreeBar || 0) > 2) { S.lastFreeBar = now; enterSection(micSection()); }
     for (const e of live) e.type === 'kick' ? onKick(e.v, now) : onSnare();
   } else if (!running && S.sec !== 'calm' && audio.mode === 'none') enterSection('calm');
@@ -1298,8 +1319,8 @@ function frame() {
   const gainGoal = { calm: 0.45, groove: 1, break: 0.55, drop: 1.4 }[S.sec];
   S.gain = damp(S.gain, gainGoal, 2, dt);
   S.drop = damp(S.drop, S.sec === 'drop' ? 1 : 0, 2.5, dt);
-  if (S.sec === 'break') S.dissolveGoal = audio.mode === 'demo' ? clamp(0.15 + S.barInSec / 8 * 0.85, 0, 1) : 0.5;
-  else S.dissolveGoal = S.sec === 'calm' ? 0.06 : 0;
+  if (S.sec === 'break') S.dissolveGoal = audio.mode === 'demo' ? clamp(0.15 + S.barInSec / 8 * 0.85, 0, 1) : audio.mode === 'mic' ? 0.25 + 0.7 * S.build : 0.5;
+  else S.dissolveGoal = S.sec === 'calm' ? 0.06 + 0.5 * S.build : 0;
   S.dissolve = damp(S.dissolve, S.dissolveGoal, S.dissolveGoal < S.dissolve ? 7 : 0.9, dt);
   const energy = clamp((bands.bass + bands.mid + bands.high) / 3, 0, 1);
 
