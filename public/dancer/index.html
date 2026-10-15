@@ -612,7 +612,12 @@ async function analyzeTrack(buf) {
   // even and odd beats alike; half time puts them on one side
   let ev = 0, od = 0; hits.forEach((h, i) => { if (h > ref * 0.45) { if (i % 2) od++; else ev++; } });
   const kpb = ev + od >= 16 ? (2 * Math.min(ev, od)) / (ev + od) : 1;
-  return { bpm: best, offset, sections, barDur, kpb };
+  // how energetic the song is overall, across songs: mostly its loudness (a ballad mixes ~5 dB
+  // quieter than dance-pop), a little its tempo. Calibrated on the library: Die With A Smile -12 dB
+  // -> 0, Pink Pony Club -9.7 -> 0.4, Abracadabra -6.9 -> 0.85, squabble up -5.3 -> 1
+  let pw = 0; for (let f = 0; f < F; f++) pw += eF[f]; const loudDb = 10 * Math.log10(pw / (F * hop) + 1e-12);
+  const songE = clamp(0.75 * clamp((loudDb + 12) / 6, 0, 1) + 0.25 * clamp((best - 85) / 50, 0, 1), 0, 1);
+  return { bpm: best, offset, sections, barDur, kpb, songE, loudDb };
 }
 async function loadTrack(file) {
   ensureCtx(); stopAll();
@@ -1134,8 +1139,9 @@ function songCharacter() {
   const busy = 0.45 + (fRel - 0.45) * sure;
   if (S.sec === 'calm' || S.sec === 'break') I *= 0.55; else if (S.sec === 'drop') I = Math.max(I, 0.85);
   const bass = CH.bassS !== undefined ? clamp(0.5 + (CH.bassW - CH.bassS) * 4 + (CH.bassS - 0.5) * 0.8, 0, 1) : 0.5;
+  const songE = audio.mode === 'file' && audio.analysis && audio.analysis.songE !== undefined ? audio.analysis.songE : 0.6;
   const half = CH.kpb !== undefined && CH.kpb < 0.62 && (CH.age ?? 0) > 8;
-  return { I, busy, bass, half };
+  return { I, busy, bass, half, songE };
 }
 /* Each move's own character from its motion: energy (how fast the body moves), sharpness (how
    sudden), bounce (hips up and down against side to side), ranked across the set. */
@@ -1172,8 +1178,11 @@ function pickMove(sec) {
     const e = D.acts[n], l = Math.log(stepFit(e).r);
     // grooves dance mid-sized; only drops reach for the biggest moves
     // a half-time feel (a kick every other beat: R&B, hip-hop, slow jams) dances smaller and smoother
-    const tE = (S.sec === 'drop' ? 0.6 + 0.4 * C.I : 0.12 + 0.6 * C.I) * (C.half ? 0.75 : 1);
-    const tS = C.half ? Math.min(C.busy, 0.35) : C.busy;
+    // the song's own ups and downs move the target, but within the song's overall energy: a ballad's
+    // big chorus is still a ballad (sways and arms), a dance-pop verse is still dance-pop
+    const scale = 0.35 + 0.65 * C.songE;
+    const tE = (S.sec === 'drop' ? 0.6 + 0.4 * C.I : 0.12 + 0.6 * C.I) * (C.half ? 0.75 : 1) * scale;
+    const tS = (C.half ? Math.min(C.busy, 0.35) : C.busy) * (0.4 + 0.6 * C.songE);
     const d2 = (e.e - tE) ** 2 + 0.5 * (e.sh - tS) ** 2 + 0.4 * (e.bo - C.bass) ** 2 + 2.5 * l * l;
     // a dancer doesn't keep coming back to the same step: moves seen in the last few picks are rare
     const seen = (S.recent || []).lastIndexOf(e.base), fresh = seen < 0 ? 1 : 0.12 + 0.2 * ((S.recent.length - 1 - seen) / 4);
