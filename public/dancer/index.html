@@ -1104,7 +1104,9 @@ function readCharacter(dt) {
   const all = (bandAvg(30, 150) + bandAvg(300, 2500) + bandAvg(4000, 12000)) / 3;
   CH.e += (all - CH.e) * k; CH.eP = Math.max(CH.e, CH.eP * Math.exp(-dt / 60), 0.02);
   CH.flux += (fl / 400 - CH.flux) * k; CH.fluxP = Math.max(CH.flux, CH.fluxP * Math.exp(-dt / 60), 0.005);
-  const ks = 1 - Math.exp(-dt / 30); CH.fluxS = CH.fluxS === undefined ? CH.flux : CH.fluxS + (CH.flux - CH.fluxS) * ks;
+  // the song's own average: quick to learn at the start, then a 30 s memory
+  const ks = 1 - Math.exp(-dt / Math.min(30, 3 + (CH.age || 0)));
+  CH.eS = CH.eS === undefined ? CH.e : CH.eS + (CH.e - CH.eS) * ks; CH.fluxS = CH.fluxS === undefined ? CH.flux : CH.fluxS + (CH.flux - CH.fluxS) * ks;
   const b = bandAvg(30, 150), m = bandAvg(300, 2500), bw = b / Math.max(1e-3, b + m);
   CH.bassW += (bw - CH.bassW) * k; CH.bassS = CH.bassS === undefined ? CH.bassW : CH.bassS + (CH.bassW - CH.bassS) * ks;
   // melody register: the loudest pitch between 200 Hz and 1.6 kHz, on a log scale against its range
@@ -1114,8 +1116,10 @@ function readCharacter(dt) {
 function songCharacter() {
   // busy and bass-heavy are judged against this song's own last half minute, so a dense pop mix
   // isn't "busy" all the time; across songs the bass weight still counts a little
-  const eRel = clamp(CH.e / CH.eP, 0, 1), fRel = CH.fluxS ? clamp(0.5 + (CH.flux / CH.fluxS - 1) * 1.6, 0, 1) : 0.5;
-  let I = clamp((0.55 * eRel + 0.45 * fRel - 0.45) / 0.5, 0, 1);
+  // louder / busier than this song's own recent average, not than its loudest moment so far
+  // (against the peak, a song that keeps building read as maximum for minutes)
+  const eRel = CH.eS ? clamp(0.5 + (CH.e / CH.eS - 1) * 1.8, 0, 1) : 0.5, fRel = CH.fluxS ? clamp(0.5 + (CH.flux / CH.fluxS - 1) * 1.6, 0, 1) : 0.5;
+  let I = clamp(0.55 * eRel + 0.45 * fRel, 0, 1);
   // the first seconds of a song: still getting to know it, so start moderate and commit gradually
   const sure = clamp(((CH.age ?? 99) - 2) / 14, 0, 1);
   I = 0.45 + (I - 0.45) * sure;
@@ -1577,7 +1581,7 @@ function onSourceStarted(title, meta) {
   audio.paused = false; setPlayIcon();
   S.lastBeatIdx = -1; S.lastBar = -1; S.barInSec = 0;
   // a new song: forget the last one's levels (they made every song's first 20 s read as "maximum")
-  Object.assign(CH, { e: 0, eP: 0.05, flux: 0, fluxP: 0.02, fluxS: undefined, bassW: 0.5, bassS: undefined, mel: 0.5, mLo: 1e9, mHi: 0, prev: null, age: 0, kicks: 0, kpb: undefined });
+  Object.assign(CH, { e: 0, eP: 0.05, flux: 0, fluxP: 0.02, fluxS: undefined, bassW: 0.5, bassS: undefined, mel: 0.5, mLo: 1e9, mHi: 0, prev: null, age: 0, kicks: 0, kpb: undefined, eS: undefined });
   S.recent = [];
   if (navigator.wakeLock) navigator.wakeLock.request('screen').catch(() => {});
 }
