@@ -756,6 +756,7 @@ async function loadDancer() {
     fetch('dancer-model.wasm').then(r => { if (!r.ok) throw new Error('model ' + r.status); return r.arrayBuffer(); }).then(buf => new GLTFLoader().parseAsync(buf, '')),
     fetch('idle.json').then(r => { if (!r.ok) throw new Error('idle.json ' + r.status); return r.json(); }),
   ]);
+  const movesJson = await fetch('moves.json').then(r => r.ok ? r.json() : []).catch(() => []);
   const model = gltf.scene; scene.add(model);
   let mesh = null; model.traverse(o => { if (o.isSkinnedMesh && !mesh) mesh = o; });
   mesh.visible = false; mesh.frustumCulled = false;
@@ -834,6 +835,17 @@ async function loadDancer() {
     samba: { action: mixer.clipAction(samba), P: sambaInfo.P, t0: sambaInfo.t0, ms: [0.5, 1, 2] },
     mirror: { action: mixer.clipAction(mirror), P: sambaInfo.P, t0: sambaInfo.t0, ms: [0.5, 1, 2] },
   };
+  const pools = { calm: ['idle'], groove: ['samba', 'mirror'], drop: ['samba', 'mirror'] };
+  for (const mv of movesJson) {
+    try {
+      const clip = retargetFromDeltas(mv, skel, hipsParentQ);
+      acts[mv.name] = { action: mixer.clipAction(clip), P: clip.duration, t0: 0, ms: [1, 2, 4, 8, 16], label: mv.label };
+      pools[mv.pool].push(mv.name);
+    } catch (e) { console.warn('move', mv.name, e); }
+  }
+  pools.drop = pools.drop.filter(n => n !== 'samba' || pools.drop.length < 4);
+  pools.break = pools.calm;
+  D.pools = pools;
   for (const k in acts) acts[k].action.play().setEffectiveWeight(k === 'idle' ? 1 : 0);
   Object.assign(D, { ready: true, model, mesh, skel, B, hipsRestQ, body, refl, U, mixer, acts, cur: 'idle', wpos, vBand, nv, idx });
 }
@@ -868,6 +880,40 @@ function retargetFromXbot(json, model, skel, parentQ) {
   const tracks = bones.map(b => new THREE.QuaternionKeyframeTrack(b.name + '.quaternion', times, out.get(b.name)));
   if (interps.has('mixamorigHips.position')) tracks.push(new THREE.VectorKeyframeTrack('mixamorigHips.position', times, hp));
   return new THREE.AnimationClip(src.name, src.duration, tracks);
+}
+
+/* CMU mocap moves arrive as world-space rotation deltas from a T-pose for 22 bones.
+   Each Michelle bone takes its own delta, or its nearest mapped ancestor's, applied to its rest rotation. */
+function retargetFromDeltas(mv, skel, parentQ) {
+  const bones = skel.bones, byName = new Map(bones.map(b => [b.name, b]));
+  const order = [], seen = new Set();
+  const visit = b => { if (seen.has(b)) return; if (b.parent && byName.has(b.parent.name)) visit(b.parent); seen.add(b); order.push(b); };
+  bones.forEach(visit);
+  const src = new Map();
+  for (const b of order) {
+    const short = b.name.replace('mixamorig', '');
+    src.set(b.name, mv.bones[short] ? short : (b.parent && src.get(b.parent.name)) || null);
+  }
+  const F = mv.frames, n = F + 1, times = new Float32Array(n);
+  const out = new Map(bones.map(b => [b.name, new Float32Array(n * 4)])), hp = new Float32Array(n * 3);
+  const W = new Map(), d = new THREE.Quaternion(), l = new THREE.Quaternion(), pinv = parentQ.clone().invert();
+  const hipsRest = D.restP.get('mixamorigHips'), hipsBone = byName.get('mixamorigHips'), parentPos = hipsBone.parent.getWorldPosition(new THREE.Vector3()), ps = hipsBone.parent.getWorldScale(new THREE.Vector3()).x;
+  const v = new THREE.Vector3();
+  for (let f = 0; f < n; f++) {
+    const fi = f % F; times[f] = f / mv.fps;
+    for (const b of order) {
+      const key = src.get(b.name);
+      if (key) d.fromArray(mv.bones[key], fi * 4).normalize(); else d.identity();
+      const w = (W.get(b.name) || new THREE.Quaternion()).copy(d).multiply(D.restW.get(b.name)); W.set(b.name, w);
+      const pw = W.get(b.parent.name) || parentQ;
+      l.copy(pw).invert().multiply(w); l.toArray(out.get(b.name), f * 4);
+    }
+    v.set(mv.hips[fi * 3], mv.hips[fi * 3 + 1], mv.hips[fi * 3 + 2]).add(hipsRest).sub(parentPos).applyQuaternion(pinv).divideScalar(ps);
+    v.toArray(hp, f * 3);
+  }
+  const tracks = bones.map(b => new THREE.QuaternionKeyframeTrack(b.name + '.quaternion', times, out.get(b.name)));
+  tracks.push(new THREE.VectorKeyframeTrack('mixamorigHips.position', times, hp));
+  return new THREE.AnimationClip(mv.name, F / mv.fps, tracks);
 }
 
 /* sample the clip and find the step period from the hips' vertical bounce */
@@ -920,20 +966,25 @@ function buildMirror(model, skel, clip) {
 /* ---------- performance state ---------- */
 const S = {
   sec: 'calm', kickEnv: 0, snareEnv: 0, pulse: 0, dissolve: 0, dissolveGoal: 0, drop: 0, gain: 0.4,
-  barInSec: 0, lastBeatIdx: -1, lastBar: -1, mirrorFlip: false, emitAcc: 0,
+  barInSec: 0, lastBeatIdx: -1, lastBar: -1, barsOnMove: 0, emitAcc: 0,
 };
 function setAction(name, fade = 0.8) {
-  if (!D.ready || D.cur === name) return;
+  if (!D.ready || D.cur === name || !D.acts[name]) return;
   const next = D.acts[name].action, prev = D.acts[D.cur].action;
   next.reset(); next.setEffectiveTimeScale(1); next.setEffectiveWeight(1); next.time = D.acts[name].t0;
   next.crossFadeFrom(prev, fade, false); D.cur = name;
 }
+function pickMove(sec) {
+  if (!D.ready) return null;
+  const pool = (D.pools[sec] || D.pools.groove).filter(n => n !== D.cur);
+  return pool.length ? pool[Math.floor(Math.random() * pool.length)] : D.cur;
+}
+function nextMove(sec, fade) { const m = pickMove(sec); if (m) setAction(m, fade); S.barsOnMove = 0; }
 function enterSection(sec, bar) {
   if (sec === S.sec) return;
   const was = S.sec; S.sec = sec; S.barInSec = 0;
-  if (sec === 'calm' || sec === 'break') setAction('idle', 1.2);
-  if (sec === 'groove') setAction('samba');
-  if (sec === 'drop') { setAction(S.mirrorFlip ? 'mirror' : 'samba', 0.35); if (was === 'break' || was === 'calm') reform(); }
+  nextMove(sec, sec === 'drop' ? 0.35 : sec === 'groove' ? 0.7 : 1.2);
+  if (sec === 'drop' && (was === 'break' || was === 'calm')) reform();
   updateChip();
 }
 function reform() {
@@ -944,7 +995,9 @@ function reform() {
 function onBar(bar) {
   S.barInSec++;
   moveSpots(S.sec === 'drop');
-  if (S.sec === 'drop' && S.barInSec % 8 === 0) { S.mirrorFlip = !S.mirrorFlip; setAction(S.mirrorFlip ? 'mirror' : 'samba', 0.5); }
+  S.barsOnMove++;
+  const hold = S.sec === 'drop' ? 4 : S.sec === 'groove' ? 4 : 8;
+  if (S.barsOnMove >= hold) nextMove(S.sec, S.sec === 'drop' ? 0.4 : 0.6);
 }
 function onBeat(n) {
   if (S.sec === 'drop') spots.forEach((s, i) => s.goalCol.copy(PAL_LIST[(n + i * 2) % 4]));
