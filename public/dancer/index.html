@@ -1109,6 +1109,8 @@ function setAction(name, fade = 0.8) {
 const CH = { e: 0, eP: 0.05, flux: 0, fluxP: 0.02, bassW: 0.5, bLo: 1, bHi: 0, mel: 0.5, mLo: 1e9, mHi: 0, prev: null };
 function readCharacter(dt) {
   if (!audio.ctx || audio.mode === 'none' || !audio.freq) return;
+  // real elapsed time (frames can be throttled when the window is hidden, and dt is clamped)
+  const now = audio.ctx.currentTime; dt = CH.lastT ? clamp(now - CH.lastT, 0, 1) : dt; CH.lastT = now;
   CH.age = (CH.age || 0) + dt;
   const f = audio.freq, hz = audio.ctx.sampleRate / audio.analyser.fftSize;
   let fl = 0; if (CH.prev) for (let i = 2; i < 400; i++) { const d = f[i] - CH.prev[i]; if (d > 0) fl += d; } else CH.prev = new Uint8Array(f.length);
@@ -1599,7 +1601,7 @@ function onSourceStarted(title, meta) {
   audio.paused = false; setPlayIcon();
   S.lastBeatIdx = -1; S.lastBar = -1; S.barInSec = 0;
   // a new song: forget the last one's levels (they made every song's first 20 s read as "maximum")
-  Object.assign(CH, { e: 0, eP: 0.05, flux: 0, fluxP: 0.02, fluxS: undefined, bassW: 0.5, bassS: undefined, mel: 0.5, mLo: 1e9, mHi: 0, prev: null, age: 0, kicks: 0, kpb: undefined, eS: undefined });
+  Object.assign(CH, { e: 0, eP: 0.05, flux: 0, fluxP: 0.02, fluxS: undefined, bassW: 0.5, bassS: undefined, mel: 0.5, mLo: 1e9, mHi: 0, prev: null, age: 0, kicks: 0, kpb: undefined, eS: undefined, lastT: 0 });
   S.recent = [];
   if (navigator.wakeLock) navigator.wakeLock.request('screen').catch(() => {});
 }
