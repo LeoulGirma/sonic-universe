@@ -148,6 +148,11 @@ export class FeatureExtractor {
   }
   private lowHist = new Float32Array(3).fill(-200); // last 3 frames of low-band level
   private lowHead = 0;
+  /** running bass-minus-mid level (dB) of what is heard: speakers and mics thin the low end */
+  private lowBal = 0;
+  private lowBalPrimed = false;
+  /** seconds the low end has been clearly present: the balance is only trusted after a while */
+  private lowSeen = 0;
   private kickCand: { start: number; until: number; peak: number; z: number } | null = null;
   private onsetRate = new Envelope(0.6, 1.5);
 
@@ -224,6 +229,9 @@ export class FeatureExtractor {
     this.hitPeaks = [];
     this.lastHatT = -1;
     this.kickCand = null;
+    this.lowBal = 0;
+    this.lowBalPrimed = false;
+    this.lowSeen = 0;
     this.breakdownHeld = 0;
     this.dropArmedUntil = -1;
     this.armedThisBreakdown = false;
@@ -441,6 +449,15 @@ export class FeatureExtractor {
       let minRecent = f.bassDb;
       for (let i = 0; i < this.lowHist.length; i++) minRecent = Math.min(minRecent, this.lowHist[i]);
       const rise = f.bassDb - minRecent;
+      // live, the low end is judged against the room's own balance: through laptop speakers and a
+      // mic a kick barely clears the mids, so a fixed "6 dB over the mids" never passes there
+      const bal = f.bassDb - f.midDb;
+      if (!this.lowBalPrimed) { this.lowBal = bal; this.lowBalPrimed = true; }
+      else this.lowBal += (bal - this.lowBal) * (1 - Math.exp(-dt / 4));
+      if (bal > -30) this.lowSeen += dt;
+      const live = !this.map && this.lowSeen > 6;
+      const shareMin = live ? Math.max(-3, Math.min(6, this.lowBal + 5)) : 6;
+      const strongMin = live ? Math.max(3, Math.min(15, this.lowBal + 11)) : 15;
       if (!this.kickCand && (zKick > 2.0 || rise > 4.5) && t - this.lastKickT > 0.07) {
         this.kickCand = { start: t, until: t + 0.055, peak: -200, z: Math.max(zKick, rise / 2) };
       }
@@ -451,13 +468,13 @@ export class FeatureExtractor {
         if (t >= c.until || margin >= 4.5) {
           // the low end must also dominate the mids (kicks do; pads, congas and leakage don't)
           const lowShare = c.peak - f.midDb;
-          if (margin > 0 && lowShare > 6 && c.peak > -75 && f.loudnessDb > SILENCE_DB) {
+          if (margin > 0 && lowShare > shareMin && c.peak > -75 && f.loudnessDb > SILENCE_DB) {
             // Strength is relative to this song's own recent hits (rank between its 25th and 90th
             // percentile peak levels), so dense real mixes don't saturate every hit at full size.
             const rel = this.hitRank(c.peak);
             this.pushHitPeak(c.peak);
-            const strong = margin >= 3 && lowShare > 15; // structure + tempo; rank only shapes size
-            const share = clamp01((lowShare - 6) / 20);
+            const strong = margin >= 3 && lowShare > strongMin; // structure + tempo; rank only shapes size
+            const share = clamp01((lowShare - shareMin) / 20);
             this.lastKickT = c.start; // refractory counts from the onset, not the confirmation
             const strength = clamp01((0.2 + 0.8 * Math.pow(rel, 1.3)) * (0.5 + 0.5 * share));
             f.kick = Math.max(f.kick, strength);
