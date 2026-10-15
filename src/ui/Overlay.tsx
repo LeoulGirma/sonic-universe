@@ -249,6 +249,10 @@ export function Overlay() {
                   <span className="hub__tag">The earlier valley, kept as it was</span>
                 </a>
               )] : [])])}
+              <a key="dancer" href={`${import.meta.env.BASE_URL}dancer/`} className="hub__card" style={{ ['--w' as string]: '#ffb547' }}>
+                <span className="hub__name">The Dancer</span>
+                <span className="hub__tag">A body made of light that dances to the beat</span>
+              </a>
             </div>
             {st.dev && (
               <div className="hub__dev">

@@ -1,0 +1,1268 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}</style></head><body>
+<title>Sonic Universe Dancer</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="theme-color" content="#05040a">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Syne:wght@500;700;800&family=Manrope:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: full-bleed stage; brand + band legend top-left, section/BPM top-right, glass transport pinned to the bottom. Single dark look by design. */
+:root{
+  --void:#05040a;
+  --ink:#ece9f6;
+  --ink-dim:rgba(236,233,246,.62);
+  --ink-faint:rgba(236,233,246,.38);
+  --glass:rgba(13,11,24,.66);
+  --glass-hi:rgba(28,24,48,.72);
+  --line:rgba(236,233,246,.12);
+  --bass:#8b6bff;
+  --mid:#2ad4c2;
+  --mid2:#4b8cff;
+  --high:#ffb547;
+  --f-display:"Syne",ui-sans-serif,system-ui,sans-serif;
+  --f-body:"Manrope",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  color-scheme:dark;
+}
+[hidden]{display:none!important}
+*,*::before,*::after{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--void);color:var(--ink);font-family:var(--f-body);overflow:hidden;-webkit-tap-highlight-color:transparent}
+canvas#stage{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+
+.top{position:fixed;left:0;right:0;top:0;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;
+  padding-top:calc(env(safe-area-inset-top,0px) + 16px);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));pointer-events:none}
+.brand{display:grid;gap:8px;min-width:0}
+.brand__mark{font-family:var(--f-display);font-weight:700;font-size:13px;letter-spacing:.24em;text-transform:uppercase;color:var(--ink-dim)}
+.brand__world{font-family:var(--f-display);font-weight:800;font-size:28px;line-height:1;letter-spacing:-.01em}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:var(--ink-dim)}
+.legend span{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.legend i{width:8px;height:8px;border-radius:50%;display:inline-block;box-shadow:0 0 10px currentColor}
+.readout{display:grid;justify-items:end;gap:8px;flex-shrink:0}
+.chip{font-family:var(--f-display);font-weight:700;font-size:11px;letter-spacing:.2em;text-transform:uppercase;padding:6px 10px 5px;border-radius:999px;border:1px solid var(--line);background:var(--glass);color:var(--chip,var(--ink-dim));transition:color .4s,border-color .4s}
+.bpm{font-variant-numeric:tabular-nums;font-size:13px;color:var(--ink-dim)}
+.bpm b{font-family:var(--f-display);font-size:22px;color:var(--ink);font-weight:700;margin-right:4px}
+.beats{display:flex;gap:5px}
+.beats i{width:6px;height:6px;border-radius:50%;background:var(--line);transition:background .08s}
+.beats i.on{background:var(--ink)}
+
+.welcome{position:fixed;left:max(16px,env(safe-area-inset-left,0px));bottom:calc(env(safe-area-inset-bottom,0px) + 24px);
+  width:min(420px,calc(100vw - 32px));padding:22px 22px 20px;border-radius:20px;background:var(--glass);border:1px solid var(--line);
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);display:grid;gap:14px;animation:rise .7s cubic-bezier(.2,.7,.2,1) both}
+.welcome h1{margin:0;font-family:var(--f-display);font-weight:800;font-size:34px;line-height:1.02;text-wrap:balance}
+.welcome p{margin:0;color:var(--ink-dim);line-height:1.55;font-size:14px;max-width:62ch}
+.welcome__actions{display:flex;flex-wrap:wrap;gap:10px}
+.welcome__hint{font-size:12px;color:var(--ink-faint)}
+@keyframes rise{from{opacity:.0;transform:translateY(14px)}to{opacity:1;transform:none}}
+
+.btn{appearance:none;border:1px solid var(--line);background:var(--glass-hi);color:var(--ink);font:600 14px/1 var(--f-body);height:44px;padding:0 18px;border-radius:999px;display:inline-flex;align-items:center;gap:8px;cursor:pointer;transition:background .2s,border-color .2s,transform .1s}
+.btn:hover{border-color:rgba(236,233,246,.3)}
+.btn:active{transform:scale(.97)}
+.btn:focus-visible,.icon:focus-visible{outline:2px solid var(--mid);outline-offset:2px}
+.btn--primary{background:var(--ink);color:var(--void);border-color:var(--ink)}
+.btn--primary:hover{background:#fff}
+.btn svg{width:16px;height:16px}
+
+.transport{position:fixed;left:0;right:0;bottom:0;display:flex;justify-content:center;
+  padding-bottom:calc(env(safe-area-inset-bottom,0px) + 16px);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));pointer-events:none}
+.transport__bar{pointer-events:auto;display:flex;align-items:center;gap:12px;width:min(640px,100%);padding:8px 8px 8px 8px;border-radius:999px;background:var(--glass);border:1px solid var(--line);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+.icon{appearance:none;border:0;background:var(--ink);color:var(--void);width:44px;height:44px;border-radius:50%;display:grid;place-items:center;cursor:pointer;flex-shrink:0}
+.icon svg{width:18px;height:18px}
+.icon--ghost{background:transparent;color:var(--ink-dim);border:1px solid var(--line)}
+.icon--ghost:hover{color:var(--ink)}
+.now{flex:1;min-width:0;display:grid;gap:5px}
+.now__title{font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.now__meta{font-size:12px;color:var(--ink-dim);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.progress{height:2px;border-radius:2px;background:var(--line);overflow:hidden}
+.progress i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--bass),var(--mid),var(--high))}
+
+.icon--on{background:var(--mid);color:var(--void);border-color:var(--mid)}
+.cam{position:fixed;right:max(16px,env(safe-area-inset-right,0px));bottom:calc(env(safe-area-inset-bottom,0px) + 84px);width:96px;height:128px;border-radius:14px;object-fit:cover;border:1px solid var(--line);background:var(--glass);transform:scaleX(-1);opacity:.85}
+.cam.raw{transform:none}
+.toast{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);padding:14px 18px;border-radius:14px;background:var(--glass);border:1px solid var(--line);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);font-size:14px;color:var(--ink);max-width:calc(100vw - 32px);text-align:center}
+
+@media (max-width:640px){
+  .brand__world{font-size:22px}
+  .legend{font-size:11px;gap:4px 10px}
+  .welcome{bottom:calc(env(safe-area-inset-bottom,0px) + 16px);padding:18px;gap:12px}
+  .welcome h1{font-size:26px}
+  .welcome p{font-size:13px;line-height:1.5}
+  .welcome__actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .welcome__actions .btn{justify-content:center;padding:0 10px;height:42px;font-size:13px;white-space:nowrap}
+  .transport__bar{gap:8px}
+  .icon--ghost.hide-sm{display:none}
+}
+@media (max-width:380px){
+  .welcome__hint{display:none}
+  .welcome h1{font-size:23px}
+  .welcome__actions .btn svg{display:none}
+  .icon{width:40px;height:40px}
+}
+@media (max-height:520px) and (orientation:landscape){
+  .top{padding-top:calc(env(safe-area-inset-top,0px) + 10px)}
+  .brand{gap:4px}
+  .brand__world{font-size:19px}
+  .brand__mark{font-size:11px}
+  .welcome{width:min(380px,44vw);bottom:calc(env(safe-area-inset-bottom,0px) + 12px);padding:14px 16px;gap:10px;border-radius:16px}
+  .welcome p,.welcome__hint{display:none}
+  .welcome h1{font-size:21px}
+  .welcome__actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .welcome__actions .btn{justify-content:center;padding:0 10px;height:38px;font-size:13px;white-space:nowrap}
+  .transport{padding-bottom:calc(env(safe-area-inset-bottom,0px) + 8px)}
+  .transport__bar{width:min(560px,100%);padding:5px}
+  .icon{width:38px;height:38px}
+  .cam{width:72px;height:96px;bottom:calc(env(safe-area-inset-bottom,0px) + 64px)}
+}
+@media (prefers-reduced-motion:reduce){.welcome{animation:none}}
+</style>
+
+<canvas id="stage" aria-label="A dancer made of light that moves to the music"></canvas>
+
+<header class="top">
+  <div class="brand">
+    <div class="brand__mark">Sonic Universe</div>
+    <div class="brand__world">The Dancer</div>
+    <div class="legend" aria-label="Which part of the body each frequency band drives">
+      <span style="color:var(--bass)"><i style="background:var(--bass)"></i><em style="font-style:normal;color:var(--ink-dim)">Bass · legs</em></span>
+      <span style="color:var(--mid)"><i style="background:var(--mid)"></i><em style="font-style:normal;color:var(--ink-dim)">Mids · torso</em></span>
+      <span style="color:var(--high)"><i style="background:var(--high)"></i><em style="font-style:normal;color:var(--ink-dim)">Highs · hands, head</em></span>
+    </div>
+  </div>
+  <div class="readout">
+    <div class="chip" id="chip">Calm</div>
+    <div class="bpm" id="bpm" hidden><b id="bpmv">118</b>BPM</div>
+    <div class="beats" id="beats" hidden><i></i><i></i><i></i><i></i></div>
+  </div>
+</header>
+
+<section class="welcome" id="welcome">
+  <h1>A body made of light that hears the music</h1>
+  <p>Bass pumps the hips and lights the legs, snares snap the head, highs flick the hands. The steps lock to the beat, and on the drop the dancer breaks apart and reforms on the downbeat.</p>
+  <div class="welcome__actions">
+    <button class="btn btn--primary" id="demoBtn" type="button" disabled>
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15l13-7.5z"/></svg>
+      Play demo beat
+    </button>
+    <button class="btn" id="loadBtn" type="button" disabled>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg>
+      Load a track
+    </button>
+    <button class="btn" id="micBtn" type="button" disabled>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+      Use mic
+    </button>
+    <button class="btn" id="mirrorBtn" type="button" disabled>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="5" r="2.5"/><path d="M12 8v7M7 11l5-2 5 2M9 21l3-6 3 6"/></svg>
+      Mirror me
+    </button>
+  </div>
+  <div class="welcome__hint" id="hint">Loading the dancer…</div>
+</section>
+
+<nav class="transport" id="transport" hidden>
+  <div class="transport__bar">
+    <button class="icon" id="playBtn" type="button" aria-label="Pause">
+      <svg id="icoPause" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4.5" width="4" height="15" rx="1"/><rect x="14" y="4.5" width="4" height="15" rx="1"/></svg>
+      <svg id="icoPlay" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="display:none"><path d="M7 4.5v15l13-7.5z"/></svg>
+    </button>
+    <div class="now">
+      <div class="now__title" id="nowTitle">Demo beat</div>
+      <div class="now__meta" id="nowMeta">A minor · 118 BPM</div>
+      <div class="progress"><i id="prog"></i></div>
+    </div>
+    <button class="icon icon--ghost hide-sm" id="demoBtn2" type="button" aria-label="Play demo beat" title="Demo beat">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 12h3l3-8 4 16 3-8h5"/></svg>
+    </button>
+    <button class="icon icon--ghost" id="micBtn2" type="button" aria-label="Use mic" title="Use mic">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+    </button>
+    <button class="icon icon--ghost" id="mirrorBtn2" type="button" aria-label="Mirror me" title="Mirror me">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="5" r="2.5"/><path d="M12 8v7M7 11l5-2 5 2M9 21l3-6 3 6"/></svg>
+    </button>
+    <button class="icon icon--ghost" id="loadBtn2" type="button" aria-label="Load a track" title="Load a track">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg>
+    </button>
+  </div>
+</nav>
+<input type="file" id="file" accept="audio/*" hidden>
+<video class="cam" id="cam" playsinline muted hidden></video>
+<div class="toast" id="toast" hidden></div>
+
+<script type="importmap">
+{"imports":{
+  "three":"https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+  "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+const $ = id => document.getElementById(id);
+const MOBILE = matchMedia('(pointer:coarse)').matches || Math.min(innerWidth, innerHeight) < 600;
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const N_POINTS = MOBILE ? 30000 : 64000;
+const N_EMBERS = MOBILE ? 5000 : 9000;
+const col = h => new THREE.Color(h);
+const PAL = { bass: col('#8b6bff'), mid: col('#2ad4c2'), mid2: col('#4b8cff'), high: col('#ffb547'), bg: col('#05040a') };
+const PAL_LIST = [PAL.bass, PAL.mid, PAL.mid2, PAL.high];
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const damp = (a, b, k, dt) => lerp(a, b, 1 - Math.exp(-k * dt));
+const smooth = (e0, e1, x) => { const t = clamp((x - e0) / (e1 - e0), 0, 1); return t * t * (3 - 2 * t); };
+
+/* ---------- renderer / scene ---------- */
+const canvas = $('stage');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio || 1, MOBILE ? 1.5 : 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+const scene = new THREE.Scene();
+scene.background = PAL.bg.clone();
+const camera = new THREE.PerspectiveCamera(38, innerWidth / innerHeight, 0.05, 80);
+const TARGET = new THREE.Vector3(0, 0.98, 0);
+camera.position.set(0.6, 1.3, 4.4);
+const controls = new OrbitControls(camera, canvas);
+controls.target.copy(TARGET);
+controls.enableDamping = true; controls.dampingFactor = 0.08;
+controls.enablePan = false; controls.minDistance = 1.8; controls.maxDistance = 16;
+controls.maxPolarAngle = Math.PI * 0.5; controls.minPolarAngle = Math.PI * 0.18;
+controls.autoRotate = !REDUCED; controls.autoRotateSpeed = 0.35;
+let dragging = false, lastInteract = -99, baseDist = camera.position.distanceTo(TARGET), fitDist = baseDist, userZoom = 1, fitted = false;
+controls.addEventListener('start', () => { dragging = true; controls.autoRotate = false; });
+controls.addEventListener('end', () => { dragging = false; lastInteract = performance.now() / 1000; userZoom = clamp(camera.position.distanceTo(controls.target) / fitDist, 0.45, 2.5); });
+
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.5, 0.45, 0.2);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+
+const sizeUniform = { value: 1 };
+function resize() {
+  const w = innerWidth, h = innerHeight;
+  renderer.setSize(w, h); composer.setSize(w, h);
+  camera.aspect = w / h; camera.updateProjectionMatrix();
+  const v = new THREE.Vector2(); renderer.getDrawingBufferSize(v);
+  sizeUniform.value = v.y / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2));
+}
+addEventListener('resize', resize); resize();
+
+/* frame the dancer inside the free area between the header, the welcome card and the transport */
+function layoutFit() {
+  const w = innerWidth, h = innerHeight;
+  const top = document.querySelector('.brand').getBoundingClientRect().bottom + 8;
+  let left = 0, right = w, bottom = h - 10;
+  const wel = $('welcome'), tr = $('transport');
+  if (!wel.hidden) { const r = wel.getBoundingClientRect(); if (w - r.right >= w * 0.48) left = r.right + 8; else bottom = Math.min(bottom, r.top - 8); }
+  if (!tr.hidden) { const r = tr.querySelector('.transport__bar').getBoundingClientRect(); bottom = Math.min(bottom, r.top - 6); }
+  const bw = Math.max(140, right - left), bh = Math.max(140, bottom - top);
+  const t = Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2);
+  const dH = 2.25 / (2 * t) * (h / bh);
+  const dW = 1.3 / (2 * t * (w / h)) * (w / bw);
+  fitDist = clamp(Math.max(dH, dW), 2.4, 12);
+  camera.setViewOffset(w, h, -((left + right) / 2 - w / 2), -((top + bottom) / 2 - h / 2), w, h);
+  if (!fitted) { fitted = true; camera.position.sub(controls.target).setLength(fitDist).add(controls.target); }
+}
+addEventListener('resize', () => requestAnimationFrame(layoutFit));
+
+/* ---------- shared sprite shader bits ---------- */
+const SPRITE_FRAG = /* glsl */`
+varying vec3 vColor; varying float vAlpha;
+void main(){
+  vec2 d = gl_PointCoord - 0.5; float r = length(d);
+  if (r > 0.5) discard;
+  float a = smoothstep(0.5, 0.0, r); a *= a;
+  gl_FragColor = vec4(vColor * a * vAlpha, 1.0);
+}`;
+
+/* ---------- floor ---------- */
+const RIPPLES = 6;
+const floorMat = new THREE.ShaderMaterial({
+  uniforms: {
+    uTime: { value: 0 }, uEnergy: { value: 0 }, uBg: { value: PAL.bg },
+    uGlow: { value: PAL.bass.clone() },
+    uRip: { value: Array.from({ length: RIPPLES }, () => new THREE.Vector4(-99, 0, 0, 0)) },
+    uRipCol: { value: Array.from({ length: RIPPLES }, () => new THREE.Color()) },
+    uSpotPos: { value: [new THREE.Vector3(), new THREE.Vector3()] },
+    uSpotCol: { value: [new THREE.Color(), new THREE.Color()] },
+  },
+  vertexShader: `varying vec3 vW; void main(){ vec4 w = modelMatrix*vec4(position,1.); vW = w.xyz; gl_Position = projectionMatrix*viewMatrix*w; }`,
+  fragmentShader: /* glsl */`
+    uniform float uTime, uEnergy; uniform vec3 uBg, uGlow;
+    uniform vec4 uRip[${RIPPLES}]; uniform vec3 uRipCol[${RIPPLES}];
+    uniform vec3 uSpotPos[2]; uniform vec3 uSpotCol[2];
+    varying vec3 vW;
+    void main(){
+      float r = length(vW.xz);
+      vec3 c = uBg + vec3(0.012,0.010,0.026)*(1.0 - smoothstep(0.0, 7.0, r));
+      float f = fract(r*2.0);
+      c += vec3(0.30,0.27,0.55) * smoothstep(0.03, 0.0, min(f, 1.0-f)) * 0.06 * (1.0 - smoothstep(1.2, 7.0, r));
+      for (int i = 0; i < ${RIPPLES}; i++) {
+        float age = uTime - uRip[i].x;
+        if (age > 0.0 && age < 2.6) {
+          float rad = 0.35 + age*2.6;
+          c += uRipCol[i] * exp(-pow((r-rad)*5.0, 2.0)) * (1.0 - age/2.6) * uRip[i].y * 0.13;
+        }
+      }
+      for (int i = 0; i < 2; i++) { vec2 d = vW.xz - uSpotPos[i].xz; c += uSpotCol[i] * exp(-dot(d,d)*2.4) * 0.2; }
+      c += uGlow * exp(-r*r*3.0) * (0.04 + uEnergy*0.1);
+      c = mix(uBg, c, 1.0 - smoothstep(5.0, 13.0, r));
+      gl_FragColor = vec4(c, 1.0);
+    }`,
+  depthWrite: false,
+});
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(40, 40).rotateX(-Math.PI / 2), floorMat);
+floor.renderOrder = -2;
+scene.add(floor);
+let ripIdx = 0;
+function ripple(t, strength, color) {
+  floorMat.uniforms.uRip.value[ripIdx].set(t, strength, 0, 0);
+  floorMat.uniforms.uRipCol.value[ripIdx].copy(color);
+  ripIdx = (ripIdx + 1) % RIPPLES;
+}
+
+/* ---------- light cones ---------- */
+const coneGeo = new THREE.ConeGeometry(0.85, 5.5, 40, 1, true).translate(0, -2.75, 0);
+const coneMat = () => new THREE.ShaderMaterial({
+  uniforms: { uCol: { value: new THREE.Color() }, uI: { value: 0 } },
+  vertexShader: `varying float vH; varying vec3 vN; varying vec3 vV;
+    void main(){ vH = clamp(-position.y/5.5, 0.0, 1.0); vec4 mv = modelViewMatrix*vec4(position,1.); vN = normalize(normalMatrix*normal); vV = normalize(-mv.xyz); gl_Position = projectionMatrix*mv; }`,
+  fragmentShader: `uniform vec3 uCol; uniform float uI; varying float vH; varying vec3 vN; varying vec3 vV;
+    void main(){ float e = pow(abs(dot(vN, vV)), 1.6); float a = (1.0 - vH*0.9) * e * uI; gl_FragColor = vec4(uCol*a*0.12, 1.0); }`,
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+});
+const spots = [
+  { apex: new THREE.Vector3(-2.3, 5.4, -1.4), target: new THREE.Vector3(-0.6, 0, 0.3), goal: new THREE.Vector3(-0.6, 0, 0.3), col: PAL.bass.clone(), goalCol: PAL.bass.clone(), mesh: null },
+  { apex: new THREE.Vector3(2.3, 5.4, -1.0), target: new THREE.Vector3(0.7, 0, 0.1), goal: new THREE.Vector3(0.7, 0, 0.1), col: PAL.mid.clone(), goalCol: PAL.mid.clone(), mesh: null },
+];
+for (const s of spots) { s.mesh = new THREE.Mesh(coneGeo, coneMat()); s.mesh.renderOrder = 1; scene.add(s.mesh); }
+const _up = new THREE.Vector3(0, -1, 0), _dir = new THREE.Vector3();
+function updateSpots(dt, intensity) {
+  spots.forEach((s, i) => {
+    s.target.x = damp(s.target.x, s.goal.x, 2.2, dt); s.target.z = damp(s.target.z, s.goal.z, 2.2, dt);
+    s.col.lerp(s.goalCol, 1 - Math.exp(-4 * dt));
+    _dir.subVectors(s.target, s.apex); const len = _dir.length(); _dir.normalize();
+    s.mesh.position.copy(s.apex); s.mesh.quaternion.setFromUnitVectors(_up, _dir); s.mesh.scale.set(1, len / 5.5, 1);
+    s.mesh.material.uniforms.uCol.value.copy(s.col); s.mesh.material.uniforms.uI.value = intensity;
+    floorMat.uniforms.uSpotPos.value[i].copy(s.target);
+    floorMat.uniforms.uSpotCol.value[i].copy(s.col).multiplyScalar(intensity);
+  });
+}
+function moveSpots(wide) {
+  for (const s of spots) {
+    const a = Math.random() * Math.PI * 2, r = (wide ? 0.8 : 0.3) + Math.random() * (wide ? 1.8 : 0.7);
+    s.goal.set(Math.cos(a) * r, 0, Math.sin(a) * r * 0.7 + 0.2);
+  }
+}
+
+/* ---------- embers + dust (CPU particles, world space) ---------- */
+function makeFreeParticles(n) {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3).setUsage(THREE.DynamicDrawUsage));
+  g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(n * 3), 3).setUsage(THREE.DynamicDrawUsage));
+  g.setAttribute('aLife', new THREE.BufferAttribute(new Float32Array(n), 1).setUsage(THREE.DynamicDrawUsage));
+  g.setAttribute('aSize', new THREE.BufferAttribute(new Float32Array(n), 1));
+  const m = new THREE.ShaderMaterial({
+    uniforms: { uScale: sizeUniform },
+    vertexShader: `uniform float uScale; attribute float aLife; attribute float aSize; attribute vec3 color; varying vec3 vColor; varying float vAlpha;
+      void main(){ vec4 mv = modelViewMatrix*vec4(position,1.); gl_Position = projectionMatrix*mv;
+        gl_PointSize = aSize * sqrt(max(aLife,0.0)) * uScale / max(0.1, -mv.z); vColor = color; vAlpha = aLife; if (aLife <= 0.0) gl_PointSize = 0.0; }`,
+    fragmentShader: SPRITE_FRAG, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  });
+  const p = new THREE.Points(g, m); p.frustumCulled = false; scene.add(p);
+  return { g, p, n, vel: new Float32Array(n * 3), life: new Float32Array(n), maxLife: new Float32Array(n), head: 0 };
+}
+const embers = makeFreeParticles(N_EMBERS);
+const dust = makeFreeParticles(MOBILE ? 350 : 700);
+{
+  const pa = dust.g.attributes.position.array, ca = dust.g.attributes.color.array, la = dust.g.attributes.aLife.array, sa = dust.g.attributes.aSize.array;
+  for (let i = 0; i < dust.n; i++) {
+    const a = Math.random() * Math.PI * 2, r = 1.2 + Math.random() * 7;
+    pa[i * 3] = Math.cos(a) * r; pa[i * 3 + 1] = Math.random() * 5; pa[i * 3 + 2] = Math.sin(a) * r;
+    const c = PAL_LIST[i % 4]; ca[i * 3] = c.r * 0.5; ca[i * 3 + 1] = c.g * 0.5; ca[i * 3 + 2] = c.b * 0.5;
+    la[i] = 0.25 + Math.random() * 0.35; sa[i] = 0.012 + Math.random() * 0.02;
+    dust.vel[i * 3] = (Math.random() - 0.5) * 0.04; dust.vel[i * 3 + 1] = 0.02 + Math.random() * 0.05; dust.vel[i * 3 + 2] = (Math.random() - 0.5) * 0.04;
+  }
+}
+function updateDust(dt, energy) {
+  const pa = dust.g.attributes.position.array, sp = 1 + energy * 3;
+  for (let i = 0; i < dust.n; i++) {
+    pa[i * 3] += dust.vel[i * 3] * dt * sp; pa[i * 3 + 1] += dust.vel[i * 3 + 1] * dt * sp; pa[i * 3 + 2] += dust.vel[i * 3 + 2] * dt * sp;
+    if (pa[i * 3 + 1] > 5) pa[i * 3 + 1] = 0;
+  }
+  dust.g.attributes.position.needsUpdate = true;
+}
+const _ev = new THREE.Vector3();
+function emitEmber(pos, vel, c, life, size) {
+  const e = embers, i = e.head; e.head = (e.head + 1) % e.n;
+  const pa = e.g.attributes.position.array, ca = e.g.attributes.color.array, sa = e.g.attributes.aSize.array;
+  pa[i * 3] = pos.x; pa[i * 3 + 1] = pos.y; pa[i * 3 + 2] = pos.z;
+  e.vel[i * 3] = vel.x; e.vel[i * 3 + 1] = vel.y; e.vel[i * 3 + 2] = vel.z;
+  ca[i * 3] = c.r; ca[i * 3 + 1] = c.g; ca[i * 3 + 2] = c.b;
+  e.life[i] = life; e.maxLife[i] = life; sa[i] = size;
+}
+function updateEmbers(dt, t) {
+  const e = embers, pa = e.g.attributes.position.array, la = e.g.attributes.aLife.array, drag = Math.exp(-1.7 * dt);
+  for (let i = 0; i < e.n; i++) {
+    if (e.life[i] <= 0) { la[i] = 0; continue; }
+    e.life[i] -= dt;
+    const k = i * 3;
+    e.vel[k] *= drag; e.vel[k + 1] = e.vel[k + 1] * drag + 0.35 * dt; e.vel[k + 2] *= drag;
+    const px = pa[k], py = pa[k + 1];
+    e.vel[k] += Math.sin(py * 3.1 + t * 1.3 + i) * 0.25 * dt;
+    e.vel[k + 2] += Math.cos(px * 2.7 + t * 1.1 + i) * 0.25 * dt;
+    pa[k] += e.vel[k] * dt; pa[k + 1] += e.vel[k + 1] * dt; pa[k + 2] += e.vel[k + 2] * dt;
+    la[i] = Math.max(0, e.life[i] / e.maxLife[i]);
+  }
+  e.g.attributes.position.needsUpdate = true; e.g.attributes.aLife.needsUpdate = true;
+  e.g.attributes.color.needsUpdate = true; e.g.attributes.aSize.needsUpdate = true;
+}
+
+/* ---------- audio ---------- */
+const audio = {
+  ctx: null, master: null, analyser: null, freq: null, time: null, noise: null,
+  mode: 'none', paused: false, bpm: 118, beat: 60 / 118,
+  grid0: 0, t0: 0, buffer: null, src: null, analysis: null, events: [], timer: 0, nextStep: 0, step: 0, name: '',
+};
+function ensureCtx() {
+  if (!audio.ctx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    const ctx = audio.ctx = new AC();
+    audio.master = ctx.createGain(); audio.master.gain.value = 0.85;
+    const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -14; comp.ratio.value = 3; comp.attack.value = 0.004; comp.release.value = 0.18;
+    audio.analyser = ctx.createAnalyser(); audio.analyser.fftSize = 2048; audio.analyser.smoothingTimeConstant = 0.5;
+    const silent = ctx.createGain(); silent.gain.value = 0;
+    audio.master.connect(comp); comp.connect(ctx.destination); comp.connect(audio.analyser); audio.analyser.connect(silent); silent.connect(ctx.destination);
+    audio.freq = new Uint8Array(audio.analyser.frequencyBinCount);
+    const nb = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate), d = nb.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    audio.noise = nb;
+  }
+  if (audio.ctx.state === 'suspended') audio.ctx.resume();
+  return audio.ctx;
+}
+function stopAll() {
+  clearInterval(audio.timer); audio.timer = 0; audio.events.length = 0;
+  if (audio.src) { try { audio.src.onended = null; audio.src.stop(); } catch (e) {} audio.src.disconnect(); audio.src = null; }
+  if (audio.mic) { audio.mic.stream.getTracks().forEach(t => t.stop()); audio.mic.node.disconnect(); audio.mic = null; }
+  audio.mode = 'none'; audio.kicks = []; audio.locked = false;
+  $('micBtn2').classList.remove('icon--on');
+}
+
+/* demo synth */
+const mtof = m => 440 * Math.pow(2, (m - 69) / 12);
+const CHORDS = [
+  { root: 33, pad: [57, 60, 64], arp: [69, 72, 76, 79] },
+  { root: 29, pad: [53, 57, 60], arp: [65, 69, 72, 77] },
+  { root: 36, pad: [55, 60, 64], arp: [67, 72, 76, 79] },
+  { root: 31, pad: [55, 59, 62], arp: [67, 71, 74, 79] },
+];
+const DEMO_BPM = 118;
+const demoBar = abs => abs < 48 ? abs : 8 + ((abs - 48) % 40);
+const demoSection = bar => bar < 8 ? 'calm' : bar < 24 ? 'groove' : bar < 32 ? 'break' : 'drop';
+function env(g, t, a, peak, d) { g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(peak, t + a); g.gain.exponentialRampToValueAtTime(0.0001, t + a + d); }
+function noiseSrc(t, dur) { const s = audio.ctx.createBufferSource(); s.buffer = audio.noise; s.start(t, Math.random() * 1.2, dur + 0.05); return s; }
+function kick(t, v = 1) {
+  const c = audio.ctx, o = c.createOscillator(), g = c.createGain();
+  o.frequency.setValueAtTime(165, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.13);
+  env(g, t, 0.004, v, 0.42); o.connect(g); g.connect(audio.master); o.start(t); o.stop(t + 0.5);
+  const n = noiseSrc(t, 0.02), hp = c.createBiquadFilter(), ng = c.createGain(); hp.type = 'highpass'; hp.frequency.value = 3000;
+  env(ng, t, 0.001, 0.12 * v, 0.015); n.connect(hp); hp.connect(ng); ng.connect(audio.master);
+}
+function clap(t, v = 0.5) {
+  const c = audio.ctx, n = noiseSrc(t, 0.3), bp = c.createBiquadFilter(), g = c.createGain();
+  bp.type = 'bandpass'; bp.frequency.value = 1600; bp.Q.value = 0.9;
+  g.gain.setValueAtTime(0.0001, t);
+  [0, 0.011, 0.022].forEach(o => { g.gain.setValueAtTime(v, t + o); g.gain.exponentialRampToValueAtTime(v * 0.25, t + o + 0.009); });
+  g.gain.setValueAtTime(v * 0.8, t + 0.033); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.24);
+  n.connect(bp); bp.connect(g); g.connect(audio.master);
+}
+function hat(t, open, v = 0.16) {
+  const c = audio.ctx, n = noiseSrc(t, open ? 0.3 : 0.06), hp = c.createBiquadFilter(), g = c.createGain();
+  hp.type = 'highpass'; hp.frequency.value = 7600; env(g, t, 0.001, v, open ? 0.22 : 0.045);
+  n.connect(hp); hp.connect(g); g.connect(audio.master);
+}
+function bass(t, m, dur, v = 0.32) {
+  const c = audio.ctx, o = c.createOscillator(), s = c.createOscillator(), f = c.createBiquadFilter(), g = c.createGain();
+  o.type = 'sawtooth'; o.frequency.value = mtof(m); s.type = 'sine'; s.frequency.value = mtof(m);
+  f.type = 'lowpass'; f.Q.value = 6; f.frequency.setValueAtTime(950, t); f.frequency.exponentialRampToValueAtTime(200, t + dur);
+  env(g, t, 0.005, v, dur); o.connect(f); s.connect(g); f.connect(g); g.connect(audio.master);
+  o.start(t); s.start(t); o.stop(t + dur + 0.05); s.stop(t + dur + 0.05);
+}
+function pad(t, notes, dur, v = 0.05) {
+  const c = audio.ctx, f = c.createBiquadFilter(), g = c.createGain();
+  f.type = 'lowpass'; f.frequency.value = 1300;
+  g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(v, t + 0.5); g.gain.setValueAtTime(v, t + dur - 0.3); g.gain.linearRampToValueAtTime(0.0001, t + dur + 0.4);
+  f.connect(g); g.connect(audio.master);
+  for (const n of notes) for (const d of [-7, 7]) { const o = c.createOscillator(); o.type = 'sawtooth'; o.frequency.value = mtof(n); o.detune.value = d; o.connect(f); o.start(t); o.stop(t + dur + 0.5); }
+}
+function pluck(t, m, v = 0.07) {
+  const c = audio.ctx, o = c.createOscillator(), g = c.createGain();
+  o.type = 'triangle'; o.frequency.value = mtof(m); env(g, t, 0.003, v, 0.2); o.connect(g); g.connect(audio.master); o.start(t); o.stop(t + 0.3);
+}
+function riser(t, dur) {
+  const c = audio.ctx, n = noiseSrc(t, dur), bp = c.createBiquadFilter(), g = c.createGain();
+  bp.type = 'bandpass'; bp.Q.value = 2; bp.frequency.setValueAtTime(350, t); bp.frequency.exponentialRampToValueAtTime(7000, t + dur);
+  g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.22, t + dur);
+  g.gain.linearRampToValueAtTime(0.0001, t + dur + 0.05);
+  n.connect(bp); bp.connect(g); g.connect(audio.master);
+}
+function impact(t) {
+  const c = audio.ctx, n = noiseSrc(t, 1.6), lp = c.createBiquadFilter(), g = c.createGain();
+  lp.type = 'lowpass'; lp.frequency.setValueAtTime(5000, t); lp.frequency.exponentialRampToValueAtTime(300, t + 1.5);
+  env(g, t, 0.002, 0.3, 1.5); n.connect(lp); lp.connect(g); g.connect(audio.master);
+  kick(t, 1.2);
+}
+function scheduleStep(step, t) {
+  const abs = Math.floor(step / 16), s = step % 16, bar = demoBar(abs), sec = demoSection(bar), ch = CHORDS[bar % 4], six = audio.beat / 4;
+  const ev = (type, extra) => audio.events.push(Object.assign({ t, type }, extra));
+  if (s === 0) ev('bar', { bar, sec });
+  if (s % 4 === 0) ev('beat', { n: s / 4 });
+  if (sec === 'groove' || sec === 'drop') {
+    if (s % 4 === 0) { kick(t); ev('kick', { v: 1 }); }
+    if (s === 4 || s === 12) { clap(t); ev('snare'); }
+    if (sec === 'groove') { if (s % 2 === 0) hat(t, s % 4 === 2, s % 4 === 2 ? 0.12 : 0.08); }
+    else { hat(t, s % 4 === 2, s % 2 ? 0.07 : 0.15); if (s % 2 === 1) ev('hat'); }
+    if ([0, 3, 6, 8, 11, 14].includes(s)) bass(t, ch.root + (s === 6 || s === 14 ? 12 : 0), six * 2.2, sec === 'drop' ? 0.36 : 0.3);
+    if (s === 0) pad(t, ch.pad, audio.beat * 4, sec === 'drop' ? 0.045 : 0.03);
+    if (sec === 'drop') pluck(t, ch.arp[(s * 3) % 4] + 12, 0.035);
+    if (sec === 'drop' && bar === 32 && s === 0) { impact(t); ev('drop'); }
+  } else if (sec === 'calm') {
+    if (s % 4 === 2) hat(t, false, 0.06);
+    if (s === 0) { pad(t, ch.pad, audio.beat * 4, 0.05); bass(t, ch.root, audio.beat * 3.5, 0.18); ev('kick', { v: 0.35 }); }
+  } else {
+    if (s === 0) pad(t, ch.pad, audio.beat * 4, 0.06);
+    pluck(t, ch.arp[s % 4], 0.06 + (bar - 24) * 0.006);
+    if (bar === 30 && s === 0) riser(t, audio.beat * 8);
+    if (bar === 31 && (s % 2 === 0 || s >= 12)) { clap(t, 0.18 + s * 0.02); ev('snare'); }
+    if (bar >= 28 && s % 4 === 0) { kick(t, 0.25 + (bar - 28) * 0.1); }
+  }
+}
+function startDemo() {
+  ensureCtx(); stopAll();
+  audio.mode = 'demo'; audio.bpm = DEMO_BPM; audio.beat = 60 / DEMO_BPM; audio.name = 'Demo beat';
+  audio.step = 0; audio.nextStep = audio.ctx.currentTime + 0.12; audio.grid0 = audio.nextStep;
+  const tick = () => {
+    const c = audio.ctx; if (c.state !== 'running') return;
+    while (audio.nextStep < c.currentTime + 0.16) { scheduleStep(audio.step, audio.nextStep); audio.nextStep += audio.beat / 4; audio.step++; }
+  };
+  tick(); audio.timer = setInterval(tick, 25);
+  onSourceStarted('Demo beat', 'A minor · 118 BPM · synthesized live');
+}
+
+/* track loading + offline beat analysis */
+async function analyzeTrack(buf) {
+  const sr = 11025, dur = Math.min(buf.duration, 480), len = Math.ceil(dur * sr);
+  const off = new OfflineAudioContext(2, len, sr);
+  const s = off.createBufferSource(); s.buffer = buf;
+  const lp = off.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 160;
+  const merge = off.createChannelMerger(2);
+  s.connect(lp); lp.connect(merge, 0, 0); s.connect(merge, 0, 1); merge.connect(off.destination); s.start();
+  const r = await off.startRendering();
+  const lo = r.getChannelData(0), fu = r.getChannelData(1), hop = 128, F = Math.floor(len / hop), fps = sr / hop;
+  const eL = new Float32Array(F), eF = new Float32Array(F);
+  for (let f = 0; f < F; f++) { let a = 0, b = 0; for (let i = f * hop, e = i + hop; i < e; i++) { a += lo[i] * lo[i]; b += fu[i] * fu[i]; } eL[f] = a; eF[f] = b; }
+  const on = new Float32Array(F);
+  for (let f = 1; f < F; f++) on[f] = Math.max(0, Math.log(1e-7 + eL[f]) - Math.log(1e-7 + eL[f - 1])) + 0.6 * Math.max(0, Math.log(1e-7 + eF[f]) - Math.log(1e-7 + eF[f - 1]));
+  const W = Math.round(fps * 0.4), on2 = new Float32Array(F); let acc = 0;
+  for (let f = 0; f < F; f++) { acc += on[f]; if (f >= W) acc -= on[f - W]; on2[f] = Math.max(0, on[f] - acc / Math.min(f + 1, W)); }
+  let best = 120, bestScore = -1;
+  for (let bpm = 70; bpm <= 180; bpm += 0.5) {
+    const lag = 60 / bpm * fps, w = Math.exp(-0.5 * Math.pow(Math.log2(bpm / 120) / 0.55, 2));
+    let sc = 0; const L = Math.round(lag), L2 = Math.round(lag * 2);
+    for (let f = 0; f + L2 < F; f += 2) sc += on2[f] * (on2[f + L] + 0.5 * on2[f + L2]);
+    sc *= w; if (sc > bestScore) { bestScore = sc; best = bpm; }
+  }
+  const period = 60 / best * fps;
+  let ph = 0, phScore = -1;
+  for (let p = 0; p < period; p += 1) { let sc = 0; for (let k = p; k < F; k += period) sc += on2[Math.round(k)] || 0; if (sc > phScore) { phScore = sc; ph = p; } }
+  let down = 0, downScore = -1;
+  for (let d = 0; d < 4; d++) { let sc = 0; for (let k = ph + d * period; k < F; k += period * 4) sc += eL[Math.round(k)] || 0; if (sc > downScore) { downScore = sc; down = d; } }
+  const offset = (ph + down * period) / fps, beat = 60 / best, barDur = beat * 4;
+  const nBars = Math.ceil((dur - offset) / barDur), barE = new Float32Array(nBars), barB = new Float32Array(nBars);
+  for (let b = 0; b < nBars; b++) {
+    const f0 = Math.max(0, Math.floor((offset + b * barDur) * fps)), f1 = Math.min(F, Math.floor((offset + (b + 1) * barDur) * fps));
+    let a = 0, c = 0; for (let f = f0; f < f1; f++) { a += eF[f]; c += eL[f]; } const n = Math.max(1, f1 - f0);
+    barE[b] = Math.sqrt(a / n); barB[b] = Math.sqrt(c / n);
+  }
+  const sorted = Array.from(barE).sort((a, b) => a - b), p95 = sorted[Math.floor(sorted.length * 0.95)] || 1;
+  const sortedB = Array.from(barB).sort((a, b) => a - b), medB = sortedB[Math.floor(sortedB.length * 0.5)] || 1;
+  const raw = Array.from(barE, (e, b) => { const en = e / p95, bb = barB[b] / medB; return en > 0.85 && bb > 0.9 ? 'drop' : en < 0.5 ? 'calm' : bb < 0.45 ? 'break' : 'groove'; });
+  const sections = []; let cur = raw[0] || 'calm';
+  for (let b = 0; b < raw.length; b++) { if (raw[b] !== cur && raw[b + 1] === raw[b]) cur = raw[b]; sections.push(cur); }
+  return { bpm: best, offset, sections, barDur };
+}
+async function loadTrack(file) {
+  ensureCtx(); stopAll();
+  showToast('Finding the beat…');
+  try {
+    const ab = await file.arrayBuffer();
+    const buf = await new Promise((res, rej) => { const p = audio.ctx.decodeAudioData(ab, res, rej); if (p && p.then) p.then(res, rej); });
+    const an = await analyzeTrack(buf);
+    audio.buffer = buf; audio.analysis = an; audio.bpm = an.bpm; audio.beat = 60 / an.bpm;
+    const src = audio.ctx.createBufferSource(); src.buffer = buf; src.loop = true; src.connect(audio.master);
+    audio.t0 = audio.ctx.currentTime + 0.1; src.start(audio.t0); audio.src = src; audio.mode = 'file';
+    audio.name = file.name.replace(/\.[^.]+$/, '');
+    hideToast();
+    onSourceStarted(audio.name, `${Math.round(an.bpm)} BPM · beat grid locked`);
+  } catch (err) {
+    console.error(err);
+    showToast('That file could not be decoded. Try an MP3, M4A or WAV.'); setTimeout(hideToast, 3500);
+  }
+}
+/* live mic: tempo and phase are estimated from detected kicks */
+async function startMic() {
+  ensureCtx();
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } }); }
+  catch (err) { blocked('microphone', err); return; }
+  stopAll();
+  const node = audio.ctx.createMediaStreamSource(stream);
+  node.connect(audio.analyser);
+  audio.mic = { stream, node }; audio.mode = 'mic'; audio.kicks = []; audio.locked = false; audio.bpm = 120; audio.beat = 0.5;
+  audio.micE = 0; audio.micPk = 0.02; audio.lastEst = 0;
+  onSourceStarted('Listening', 'Play music near your device · finding the beat');
+  $('micBtn2').classList.add('icon--on');
+}
+function estimateTempo() {
+  const k = audio.kicks; if (k.length < 6) return;
+  let best = 0, bestBpm = 0;
+  for (let bpm = 78; bpm <= 165; bpm += 0.5) {
+    const P = 60 / bpm; let sc = 0;
+    for (let i = 0; i < k.length; i++) for (let j = i + 1; j < k.length && k[j] - k[i] < 4 * P + 0.1; j++) {
+      const r = (k[j] - k[i]) / P, n = Math.round(r), d = r - n; if (n >= 1) sc += Math.exp(-d * d / 0.004) / n;
+    }
+    sc *= Math.exp(-0.5 * Math.pow(Math.log2(bpm / 120) / 0.6, 2));
+    if (sc > best) { best = sc; bestBpm = bpm; }
+  }
+  if (!bestBpm) return;
+  audio.bpm = audio.locked && Math.abs(bestBpm / audio.bpm - 1) < 0.06 ? lerp(audio.bpm, bestBpm, 0.3) : bestBpm;
+  audio.beat = 60 / audio.bpm;
+  let sx = 0, sy = 0; for (const t of k) { const a = 2 * Math.PI * t / audio.beat; sx += Math.cos(a); sy += Math.sin(a); }
+  audio.grid0 = Math.atan2(sy, sx) / (2 * Math.PI) * audio.beat;
+  if (!audio.locked) { audio.locked = true; S.lastBeatIdx = -1; }
+  $('bpmv').textContent = Math.round(audio.bpm);
+  $('nowMeta').textContent = `Listening · ${Math.round(audio.bpm)} BPM`;
+}
+function micSection() {
+  const ratio = audio.micE / Math.max(audio.micPk, 1e-4), sinceKick = audio.ctx.currentTime - (audio.kicks[audio.kicks.length - 1] ?? -99);
+  if (sinceKick > 3) return ratio > 0.6 ? 'break' : 'calm';
+  return ratio > 0.86 ? 'drop' : ratio < 0.5 ? 'calm' : 'groove';
+}
+function blocked(what, err) {
+  console.warn(what, err);
+  const inViewer = window.parent !== window;
+  showToast(inViewer
+    ? `Claude's viewer blocks the ${what} on this page. Open the hosted copy of The Dancer to use it.`
+    : `The ${what} was not available. Allow access in your browser's site settings and try again.`);
+  setTimeout(hideToast, 5200);
+}
+function trackPos() { return audio.mode === 'file' && audio.buffer ? ((audio.ctx.currentTime - audio.t0) % audio.buffer.duration + audio.buffer.duration) % audio.buffer.duration : 0; }
+function beatPos() {
+  if (audio.mode === 'demo') return (audio.ctx.currentTime - audio.grid0) / audio.beat;
+  if (audio.mode === 'file') return (trackPos() - audio.analysis.offset) / audio.beat;
+  if (audio.mode === 'mic' && audio.locked) return (audio.ctx.currentTime - audio.grid0) / audio.beat;
+  return null;
+}
+function fileSection() {
+  const an = audio.analysis; const b = Math.floor((trackPos() - an.offset) / an.barDur);
+  return an.sections[clamp(b, 0, an.sections.length - 1)] || 'groove';
+}
+
+/* ---------- live bands ---------- */
+const bands = { bass: 0, mid: 0, high: 0, rms: 0, pk: [0.3, 0.3, 0.3], avgB: 0, avgM: 0, lastKick: 0, lastSnare: 0 };
+function bandAvg(f0, f1) {
+  const hz = audio.ctx.sampleRate / audio.analyser.fftSize, a = Math.max(1, Math.floor(f0 / hz)), b = Math.min(audio.freq.length - 1, Math.ceil(f1 / hz));
+  let s = 0; for (let i = a; i <= b; i++) s += audio.freq[i]; return s / ((b - a + 1) * 255);
+}
+function readBands(dt, now) {
+  if (!audio.ctx || audio.mode === 'none' || audio.ctx.state !== 'running') {
+    const t = performance.now() / 1000;
+    bands.bass = damp(bands.bass, 0.12 + 0.06 * Math.sin(t * 1.3), 3, dt);
+    bands.mid = damp(bands.mid, 0.1 + 0.05 * Math.sin(t * 0.9 + 1), 3, dt);
+    bands.high = damp(bands.high, 0.08 + 0.05 * Math.sin(t * 2.1 + 2), 3, dt);
+    return [];
+  }
+  audio.analyser.getByteFrequencyData(audio.freq);
+  const raw = [bandAvg(30, 150), bandAvg(300, 2500), bandAvg(4000, 12000)];
+  const out = [];
+  for (let i = 0; i < 3; i++) bands.pk[i] = Math.max(raw[i], bands.pk[i] * Math.exp(-dt * 0.15), 0.12);
+  const nb = raw.map((v, i) => clamp(v / bands.pk[i], 0, 1));
+  bands.bass = nb[0] > bands.bass ? damp(bands.bass, nb[0], 30, dt) : damp(bands.bass, nb[0], 6, dt);
+  bands.mid = nb[1] > bands.mid ? damp(bands.mid, nb[1], 25, dt) : damp(bands.mid, nb[1], 5, dt);
+  bands.high = nb[2] > bands.high ? damp(bands.high, nb[2], 30, dt) : damp(bands.high, nb[2], 8, dt);
+  if (audio.mode === 'mic') {
+    const all = (raw[0] + raw[1] + raw[2]) / 3;
+    audio.micE = lerp(audio.micE, all, 1 - Math.exp(-dt / 4));
+    audio.micPk = Math.max(audio.micE, audio.micPk * Math.exp(-dt / 90), 0.01);
+  }
+  if (audio.mode === 'file' || audio.mode === 'mic') {
+    if (raw[0] - bands.avgB > 0.06 && raw[0] > bands.avgB * 1.18 && now - bands.lastKick > 0.24) {
+      bands.lastKick = now; out.push({ type: 'kick', v: clamp(nb[0], 0.4, 1) });
+      if (audio.mode === 'mic') { const ct = audio.ctx.currentTime; audio.kicks.push(ct); while (audio.kicks.length && ct - audio.kicks[0] > 12) audio.kicks.shift(); }
+    }
+    const mraw = bandAvg(1500, 5000);
+    if (mraw - bands.avgM > 0.05 && mraw > bands.avgM * 1.2 && now - bands.lastSnare > 0.2) { bands.lastSnare = now; out.push({ type: 'snare' }); }
+    bands.avgB = lerp(bands.avgB, raw[0], 0.08); bands.avgM = lerp(bands.avgM, mraw, 0.08);
+  }
+  return out;
+}
+
+/* ---------- dancer ---------- */
+const D = { ready: false };
+const SKIN_VERT = /* glsl */`
+uniform sampler2D boneTexture; uniform mat4 bindMatrix; uniform mat4 bindMatrixInverse;
+uniform float uTime, uBass, uMid, uHigh, uPulse, uDissolve, uScale, uSize, uReflect;
+uniform vec3 uColBass, uColMid, uColMid2, uColHigh;
+attribute vec4 aSkinIndex; attribute vec4 aSkinWeight; attribute vec3 aBand; attribute vec2 aRnd;
+varying vec3 vColor; varying float vAlpha;
+mat4 boneM(float i){
+  int size = textureSize(boneTexture, 0).x; int j = int(i) * 4; int x = j % size; int y = j / size;
+  return mat4(texelFetch(boneTexture, ivec2(x, y), 0), texelFetch(boneTexture, ivec2(x + 1, y), 0),
+              texelFetch(boneTexture, ivec2(x + 2, y), 0), texelFetch(boneTexture, ivec2(x + 3, y), 0));
+}
+void main(){
+  mat4 sk = aSkinWeight.x*boneM(aSkinIndex.x) + aSkinWeight.y*boneM(aSkinIndex.y) + aSkinWeight.z*boneM(aSkinIndex.z) + aSkinWeight.w*boneM(aSkinIndex.w);
+  mat4 m = bindMatrixInverse * sk * bindMatrix;
+  vec4 w = modelMatrix * (m * vec4(position, 1.0));
+  vec3 n = normalize(mat3(modelMatrix) * (m * vec4(normal, 0.0)).xyz);
+  float e = dot(aBand, vec3(uBass, uMid, uHigh));
+  float flick = sin(aRnd.x * 61.0 + uTime * (2.0 + aRnd.y * 3.0)) * 0.5 + 0.5;
+  float disp = e * 0.01 * flick + uDissolve * (0.04 + aRnd.y * aRnd.y * 0.75) * (0.35 + flick);
+  w.xyz += n * disp;
+  float up = uReflect > 0.5 ? -1.0 : 1.0;
+  w.y += up * uDissolve * aRnd.x * aRnd.x * 0.45;
+  w.x += uDissolve * sin(uTime * 0.7 + aRnd.y * 12.0) * aRnd.x * 0.12;
+  vec4 mv = viewMatrix * w;
+  gl_Position = projectionMatrix * mv;
+  float sz = uSize * (0.55 + aRnd.y * 0.9) * (1.0 + e * 0.45 + uPulse * 0.2);
+  gl_PointSize = sz * uScale / max(0.1, -mv.z);
+  vec3 c = aBand.x * uColBass + aBand.y * mix(uColMid, uColMid2, aRnd.x) + aBand.z * uColHigh;
+  vColor = c * (0.15 + e * 0.26 + uPulse * 0.1);
+  vAlpha = 1.0 - uDissolve * 0.3;
+  if (uReflect > 0.5) vAlpha *= 0.26 * exp(w.y * 1.5);
+}`;
+
+async function loadDancer() {
+  const [gltf, idleJson] = await Promise.all([
+    // the model ships as a binary file under a served extension; parse the raw GLB bytes
+    fetch('dancer-model.wasm').then(r => { if (!r.ok) throw new Error('model ' + r.status); return r.arrayBuffer(); }).then(buf => new GLTFLoader().parseAsync(buf, '')),
+    fetch('idle.json').then(r => { if (!r.ok) throw new Error('idle.json ' + r.status); return r.json(); }),
+  ]);
+  const model = gltf.scene; scene.add(model);
+  let mesh = null; model.traverse(o => { if (o.isSkinnedMesh && !mesh) mesh = o; });
+  mesh.visible = false; mesh.frustumCulled = false;
+  model.updateMatrixWorld(true);
+  const skel = mesh.skeleton; skel.computeBoneTexture(); skel.update();
+  const bone = n => model.getObjectByName('mixamorig' + n);
+  const B = { hips: bone('Hips'), spine: bone('Spine1'), head: bone('Head'), neck: bone('Neck'), lArm: bone('LeftArm'), rArm: bone('RightArm'), lHand: bone('LeftHand'), rHand: bone('RightHand') };
+  const hipsRestQ = B.hips.getWorldQuaternion(new THREE.Quaternion());
+  const hipsParentQ = B.hips.parent.getWorldQuaternion(new THREE.Quaternion());
+  D.restW = new Map(); D.restP = new Map();
+  for (const bn of skel.bones) { D.restW.set(bn.name, bn.getWorldQuaternion(new THREE.Quaternion())); D.restP.set(bn.name, bn.getWorldPosition(new THREE.Vector3())); }
+  D.hipsRestLocal = B.hips.position.clone();
+
+  /* per-vertex bands from the bind pose */
+  const g = mesh.geometry, P = g.attributes.position, Nn = g.attributes.normal, SI = g.attributes.skinIndex, SW = g.attributes.skinWeight, idx = g.index;
+  const nv = P.count, wpos = new Float32Array(nv * 3), v = new THREE.Vector3();
+  let minY = 1e9, maxY = -1e9, minX = 1e9, maxX = -1e9;
+  for (let i = 0; i < nv; i++) { v.fromBufferAttribute(P, i).applyMatrix4(mesh.matrixWorld); wpos.set([v.x, v.y, v.z], i * 3); minY = Math.min(minY, v.y); maxY = Math.max(maxY, v.y); minX = Math.min(minX, v.x); maxX = Math.max(maxX, v.x); }
+  const cx = (minX + maxX) / 2, hw = (maxX - minX) / 2, vBand = new Float32Array(nv * 3);
+  for (let i = 0; i < nv; i++) {
+    const h = (wpos[i * 3 + 1] - minY) / (maxY - minY), ax = Math.abs(wpos[i * 3] - cx) / hw;
+    let b = 1 - smooth(0.38, 0.52, h), hi = Math.max(smooth(0.85, 0.91, h), smooth(0.4, 0.6, ax));
+    hi = Math.min(hi, 1 - b); const m = Math.max(0, 1 - b - hi);
+    vBand[i * 3] = b; vBand[i * 3 + 1] = m; vBand[i * 3 + 2] = hi;
+  }
+  D.height = maxY - minY;
+
+  /* area-weighted surface sampling */
+  const tri = idx.count / 3, cum = new Float64Array(tri), a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+  let total = 0;
+  for (let t = 0; t < tri; t++) { a.fromBufferAttribute(P, idx.getX(t * 3)); b.fromBufferAttribute(P, idx.getX(t * 3 + 1)); c.fromBufferAttribute(P, idx.getX(t * 3 + 2)); total += b.sub(a).cross(c.sub(a)).length(); cum[t] = total; }
+  const pos = new Float32Array(N_POINTS * 3), nor = new Float32Array(N_POINTS * 3), sIdx = new Float32Array(N_POINTS * 4), sW = new Float32Array(N_POINTS * 4), band = new Float32Array(N_POINTS * 3), rnd = new Float32Array(N_POINTS * 2);
+  const na = new THREE.Vector3(), nb = new THREE.Vector3(), nc = new THREE.Vector3();
+  for (let i = 0; i < N_POINTS; i++) {
+    const r = Math.random() * total; let lo = 0, hi = tri - 1;
+    while (lo < hi) { const mid = (lo + hi) >> 1; if (cum[mid] < r) lo = mid + 1; else hi = mid; }
+    const i0 = idx.getX(lo * 3), i1 = idx.getX(lo * 3 + 1), i2 = idx.getX(lo * 3 + 2);
+    let u = Math.random(), w = Math.random(); if (u + w > 1) { u = 1 - u; w = 1 - w; } const z = 1 - u - w;
+    a.fromBufferAttribute(P, i0); b.fromBufferAttribute(P, i1); c.fromBufferAttribute(P, i2);
+    pos[i * 3] = a.x * z + b.x * u + c.x * w; pos[i * 3 + 1] = a.y * z + b.y * u + c.y * w; pos[i * 3 + 2] = a.z * z + b.z * u + c.z * w;
+    na.fromBufferAttribute(Nn, i0).multiplyScalar(z).add(nb.fromBufferAttribute(Nn, i1).multiplyScalar(u)).add(nc.fromBufferAttribute(Nn, i2).multiplyScalar(w)).normalize();
+    nor[i * 3] = na.x; nor[i * 3 + 1] = na.y; nor[i * 3 + 2] = na.z;
+    const dom = z >= u && z >= w ? i0 : u >= w ? i1 : i2;
+    for (let k = 0; k < 4; k++) { sIdx[i * 4 + k] = SI.getComponent(dom, k); sW[i * 4 + k] = SW.getComponent(dom, k); }
+    for (let k = 0; k < 3; k++) band[i * 3 + k] = vBand[i0 * 3 + k] * z + vBand[i1 * 3 + k] * u + vBand[i2 * 3 + k] * w;
+    rnd[i * 2] = Math.random(); rnd[i * 2 + 1] = Math.random();
+  }
+  const pg = new THREE.BufferGeometry();
+  pg.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  pg.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+  pg.setAttribute('aSkinIndex', new THREE.BufferAttribute(sIdx, 4));
+  pg.setAttribute('aSkinWeight', new THREE.BufferAttribute(sW, 4));
+  pg.setAttribute('aBand', new THREE.BufferAttribute(band, 3));
+  pg.setAttribute('aRnd', new THREE.BufferAttribute(rnd, 2));
+  const U = {
+    boneTexture: { value: skel.boneTexture }, bindMatrix: { value: mesh.bindMatrix }, bindMatrixInverse: { value: mesh.bindMatrixInverse },
+    uTime: { value: 0 }, uBass: { value: 0 }, uMid: { value: 0 }, uHigh: { value: 0 }, uPulse: { value: 0 }, uDissolve: { value: 0 },
+    uScale: sizeUniform, uSize: { value: MOBILE ? 0.014 : 0.0105 },
+    uColBass: { value: PAL.bass }, uColMid: { value: PAL.mid }, uColMid2: { value: PAL.mid2 }, uColHigh: { value: PAL.high },
+  };
+  const matOpts = { vertexShader: SKIN_VERT, fragmentShader: SPRITE_FRAG, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending };
+  const body = new THREE.Points(pg, new THREE.ShaderMaterial({ ...matOpts, uniforms: { ...U, uReflect: { value: 0 } } }));
+  const refl = new THREE.Points(pg, new THREE.ShaderMaterial({ ...matOpts, uniforms: { ...U, uReflect: { value: 1 } } }));
+  for (const p of [body, refl]) { p.frustumCulled = false; p.matrixAutoUpdate = false; scene.add(p); }
+  refl.renderOrder = -1;
+
+  /* clips */
+  const mixer = new THREE.AnimationMixer(model);
+  const samba = gltf.animations.find(cl => /samba/i.test(cl.name)) || gltf.animations[0];
+  samba.tracks = samba.tracks.filter(tr => tr.name.endsWith('.quaternion') || tr.name === 'mixamorigHips.position');
+  const idle = retargetFromXbot(idleJson, model, skel, hipsParentQ);
+  const mirror = buildMirror(model, skel, samba);
+  const sambaInfo = analyzeStep(samba, B.hips, hipsParentQ);
+  const acts = {
+    idle: { action: mixer.clipAction(idle), P: idle.duration, t0: 0, ms: [2, 4, 8] },
+    samba: { action: mixer.clipAction(samba), P: sambaInfo.P, t0: sambaInfo.t0, ms: [0.5, 1, 2] },
+    mirror: { action: mixer.clipAction(mirror), P: sambaInfo.P, t0: sambaInfo.t0, ms: [0.5, 1, 2] },
+  };
+  for (const k in acts) acts[k].action.play().setEffectiveWeight(k === 'idle' ? 1 : 0);
+  Object.assign(D, { ready: true, model, mesh, skel, B, hipsRestQ, body, refl, U, mixer, acts, cur: 'idle', wpos, vBand, nv, idx });
+}
+
+/* The Xbot clips come from a rig whose bones all rest at identity, so each Xbot bone's world rotation
+   is already a delta from its rest pose. Apply that delta to Michelle's rest world rotation per bone. */
+function retargetFromXbot(json, model, skel, parentQ) {
+  const src = THREE.AnimationClip.parse(json);
+  const interps = new Map(src.tracks.map(t => [t.name, t.createInterpolant()]));
+  const bones = skel.bones, byName = new Map(bones.map(b => [b.name, b]));
+  const restW = bones.map(b => b.getWorldQuaternion(new THREE.Quaternion()));
+  const order = []; const seen = new Set();
+  const visit = b => { if (seen.has(b)) return; if (b.parent && byName.has(b.parent.name)) visit(b.parent); seen.add(b); order.push(b); };
+  bones.forEach(visit);
+  const fps = 30, n = Math.ceil(src.duration * fps) + 1, times = new Float32Array(n);
+  const out = new Map(bones.map(b => [b.name, new Float32Array(n * 4)])), hp = new Float32Array(n * 3);
+  const Wx = new Map(), Wm = new Map(), q = new THREE.Quaternion(), l = new THREE.Quaternion(), p = new THREE.Vector3(), pinv = parentQ.clone().invert();
+  for (let f = 0; f < n; f++) {
+    const t = Math.min(src.duration, f / fps); times[f] = t;
+    for (const b of order) {
+      const it = interps.get(b.name + '.quaternion');
+      q.set(0, 0, 0, 1); if (it) { const r = it.evaluate(t); q.set(r[0], r[1], r[2], r[3]).normalize(); }
+      const parentWx = Wx.get(b.parent.name);
+      const wx = (Wx.get(b.name) || new THREE.Quaternion()).copy(parentWx || new THREE.Quaternion()).multiply(q); Wx.set(b.name, wx);
+      const wm = (Wm.get(b.name) || new THREE.Quaternion()).copy(wx).multiply(restW[bones.indexOf(b)]); Wm.set(b.name, wm);
+      const parentWm = Wm.get(b.parent.name) || parentQ;
+      l.copy(parentWm).invert().multiply(wm); l.toArray(out.get(b.name), f * 4);
+    }
+    const ip = interps.get('mixamorigHips.position');
+    if (ip) { const r = ip.evaluate(t); p.set(r[0], r[1], r[2]).applyQuaternion(pinv).toArray(hp, f * 3); }
+  }
+  const tracks = bones.map(b => new THREE.QuaternionKeyframeTrack(b.name + '.quaternion', times, out.get(b.name)));
+  if (interps.has('mixamorigHips.position')) tracks.push(new THREE.VectorKeyframeTrack('mixamorigHips.position', times, hp));
+  return new THREE.AnimationClip(src.name, src.duration, tracks);
+}
+
+/* sample the clip and find the step period from the hips' vertical bounce */
+function analyzeStep(clip, hips, parentQ) {
+  const tr = clip.tracks.find(t => t.name === 'mixamorigHips.position');
+  if (!tr) return { P: 0.5, t0: 0 };
+  const interp = tr.createInterpolant(), fs = 100, n = Math.floor(clip.duration * fs), y = new Float32Array(n), v = new THREE.Vector3();
+  for (let i = 0; i < n; i++) { const r = interp.evaluate(i / fs); v.set(r[0], r[1], r[2]).applyQuaternion(parentQ); y[i] = v.y; }
+  const W = fs, d = new Float32Array(n);
+  for (let i = 0; i < n; i++) { let s = 0, c = 0; for (let j = Math.max(0, i - W / 2); j < Math.min(n, i + W / 2); j++) { s += y[j]; c++; } d[i] = y[i] - s / c; }
+  let bestLag = 50, best = -1e9;
+  for (let lag = 28; lag <= 110; lag++) { let s = 0; for (let i = 0; i + lag < n; i++) s += d[i] * d[i + lag]; s /= (n - lag); if (s > best) { best = s; bestLag = lag; } }
+  const P = bestLag / fs; let t0 = 0, mn = 1e9;
+  for (let p = 0; p < bestLag; p++) { let s = 0, c = 0; for (let k = p; k < n; k += bestLag) { s += d[k]; c++; } s /= c; if (s < mn) { mn = s; t0 = p / fs; } }
+  return { P, t0 };
+}
+
+/* build a left/right mirrored copy of a clip by mirroring world-space bone transforms */
+function buildMirror(model, skel, clip) {
+  const bones = skel.bones, names = bones.map(b => b.name), index = new Map(names.map((n, i) => [n, i]));
+  const partner = bones.map((b, i) => {
+    const m = b.name.includes('Left') ? b.name.replace('Left', 'Right') : b.name.includes('Right') ? b.name.replace('Right', 'Left') : b.name;
+    return index.has(m) ? index.get(m) : i;
+  });
+  const S = new THREE.Matrix4().makeScale(-1, 1, 1);
+  const rest = skel.boneInverses.map(m => m.clone().invert());
+  const C = bones.map((b, i) => S.clone().multiply(rest[partner[i]]).multiply(S).invert().multiply(rest[i]));
+  const mx = new THREE.AnimationMixer(model), act = mx.clipAction(clip); act.play();
+  const fps = 30, n = Math.ceil(clip.duration * fps) + 1, times = new Float32Array(n);
+  const qv = bones.map(() => new Float32Array(n * 4)), hp = new Float32Array(n * 3);
+  const W = bones.map(() => new THREE.Matrix4()), L = new THREE.Matrix4(), pq = new THREE.Quaternion(), pp = new THREE.Vector3(), ps = new THREE.Vector3(), inv = new THREE.Matrix4();
+  for (let f = 0; f < n; f++) {
+    const t = Math.min(clip.duration, f / fps); times[f] = t;
+    mx.setTime(t); model.updateMatrixWorld(true);
+    for (let i = 0; i < bones.length; i++) W[i].copy(S).multiply(bones[partner[i]].matrixWorld).multiply(S).multiply(C[i]);
+    for (let i = 0; i < bones.length; i++) {
+      const par = bones[i].parent, pi = index.get(par.name);
+      inv.copy(pi !== undefined && par.isBone ? W[pi] : par.matrixWorld).invert();
+      L.multiplyMatrices(inv, W[i]).decompose(pp, pq, ps);
+      pq.toArray(qv[i], f * 4);
+      if (bones[i].name === 'mixamorigHips') pp.toArray(hp, f * 3);
+    }
+  }
+  act.stop(); mx.uncacheRoot(model);
+  const tracks = bones.map((b, i) => new THREE.QuaternionKeyframeTrack(b.name + '.quaternion', times, qv[i]));
+  tracks.push(new THREE.VectorKeyframeTrack('mixamorigHips.position', times, hp));
+  return new THREE.AnimationClip(clip.name + 'Mirror', clip.duration, tracks);
+}
+
+/* ---------- performance state ---------- */
+const S = {
+  sec: 'calm', kickEnv: 0, snareEnv: 0, pulse: 0, dissolve: 0, dissolveGoal: 0, drop: 0, gain: 0.4,
+  barInSec: 0, lastBeatIdx: -1, lastBar: -1, mirrorFlip: false, emitAcc: 0,
+};
+function setAction(name, fade = 0.8) {
+  if (!D.ready || D.cur === name) return;
+  const next = D.acts[name].action, prev = D.acts[D.cur].action;
+  next.reset(); next.setEffectiveTimeScale(1); next.setEffectiveWeight(1); next.time = D.acts[name].t0;
+  next.crossFadeFrom(prev, fade, false); D.cur = name;
+}
+function enterSection(sec, bar) {
+  if (sec === S.sec) return;
+  const was = S.sec; S.sec = sec; S.barInSec = 0;
+  if (sec === 'calm' || sec === 'break') setAction('idle', 1.2);
+  if (sec === 'groove') setAction('samba');
+  if (sec === 'drop') { setAction(S.mirrorFlip ? 'mirror' : 'samba', 0.35); if (was === 'break' || was === 'calm') reform(); }
+  updateChip();
+}
+function reform() {
+  S.dissolve = Math.min(S.dissolve, 0.9); S.dissolveGoal = 0; S.pulse = 1.4;
+  burst(MOBILE ? 600 : 1100, 1.6);
+  const t = performance.now() / 1000; PAL_LIST.forEach((c, i) => ripple(t + i * 0.08, 1.4, c));
+}
+function onBar(bar) {
+  S.barInSec++;
+  moveSpots(S.sec === 'drop');
+  if (S.sec === 'drop' && S.barInSec % 8 === 0) { S.mirrorFlip = !S.mirrorFlip; setAction(S.mirrorFlip ? 'mirror' : 'samba', 0.5); }
+}
+function onBeat(n) {
+  if (S.sec === 'drop') spots.forEach((s, i) => s.goalCol.copy(PAL_LIST[(n + i * 2) % 4]));
+  else if (S.sec === 'groove') { spots[0].goalCol.copy(PAL.bass); spots[1].goalCol.copy(n % 2 ? PAL.mid : PAL.mid2); }
+  else { spots[0].goalCol.copy(PAL.bass).multiplyScalar(0.6); spots[1].goalCol.copy(PAL.mid2).multiplyScalar(0.6); }
+  const dots = $('beats').children; for (let i = 0; i < 4; i++) dots[i].classList.toggle('on', i === n % 4);
+}
+function onKick(v, t) {
+  S.kickEnv = Math.max(S.kickEnv, v); S.pulse = Math.max(S.pulse, v * 0.8);
+  ripple(t, 0.5 + v * 0.7, S.sec === 'drop' ? PAL_LIST[Math.floor(Math.random() * 4)] : PAL.bass);
+  burst(Math.round((S.sec === 'drop' ? 110 : S.sec === 'groove' ? 45 : 12) * v * (MOBILE ? 0.6 : 1)), S.sec === 'drop' ? 1.2 : 0.7, 0);
+}
+function onSnare() { S.snareEnv = 1; burst(MOBILE ? 14 : 26, 0.6, 2); }
+
+/* emit embers from random skinned vertices; bandBias picks legs (0) / torso (1) / hands+head (2) */
+const _hp = new THREE.Vector3();
+function burst(count, strength, bandBias = -1) {
+  if (!D.ready || count <= 0) return;
+  D.B.hips.getWorldPosition(_hp);
+  const vel = new THREE.Vector3(), c = new THREE.Color();
+  for (let k = 0; k < count; k++) {
+    let i = 0;
+    for (let tries = 0; tries < 6; tries++) { i = (Math.random() * D.nv) | 0; if (bandBias < 0 || D.vBand[i * 3 + bandBias] > 0.5) break; }
+    _ev.fromBufferAttribute(D.mesh.geometry.attributes.position, i);
+    D.mesh.applyBoneTransform(i, _ev); _ev.applyMatrix4(D.mesh.matrixWorld);
+    vel.set(_ev.x - _hp.x, 0, _ev.z - _hp.z); const l = vel.length() || 1; vel.multiplyScalar(1 / l);
+    const sp = strength * (0.25 + Math.random() * 0.9);
+    vel.set(vel.x * sp + (Math.random() - 0.5) * 0.5 * strength, (Math.random() * 0.6 + 0.1) * strength, vel.z * sp + (Math.random() - 0.5) * 0.5 * strength);
+    const wb = D.vBand[i * 3], wm = D.vBand[i * 3 + 1], wh = D.vBand[i * 3 + 2], cm = Math.random() < 0.5 ? PAL.mid : PAL.mid2;
+    c.setRGB((PAL.bass.r * wb + cm.r * wm + PAL.high.r * wh) * 1.3, (PAL.bass.g * wb + cm.g * wm + PAL.high.g * wh) * 1.3, (PAL.bass.b * wb + cm.b * wm + PAL.high.b * wh) * 1.3);
+    emitEmber(_ev, vel, c, 0.9 + Math.random() * 1.6, 0.012 + Math.random() * 0.02);
+  }
+}
+
+/* phase-lock an action's steps to the beat grid */
+function lockPhase(entry, bp) {
+  const a = entry.action;
+  if (audio.paused) { a.setEffectiveTimeScale(0.12); return; }
+  if (bp === null) { a.setEffectiveTimeScale(1); return; }
+  let bestM = entry.ms[0], bestR = 0, bestErr = 1e9;
+  for (const m of entry.ms) { const r = entry.P / (audio.beat * m); const e = Math.abs(Math.log(r)); if (e < bestErr) { bestErr = e; bestM = m; bestR = r; } }
+  const desired = ((bp / bestM) % 1 + 1) % 1;
+  const actual = (((a.time - entry.t0) / entry.P) % 1 + 1) % 1;
+  let err = desired - actual; if (err > 0.5) err -= 1; if (err < -0.5) err += 1;
+  a.setEffectiveTimeScale(bestR * (1 + clamp(err * 1.6, -0.35, 0.35)));
+}
+
+/* procedural bone layer, applied on top of the clip each frame */
+const _q = new THREE.Quaternion(), _qp = new THREE.Quaternion(), _qd = new THREE.Quaternion(), _qb = new THREE.Quaternion();
+const RIGHT = new THREE.Vector3(), FWD = new THREE.Vector3(), _v = new THREE.Vector3(), _s = new THREE.Vector3();
+function rotWorld(bone, axis, ang) {
+  bone.parent.getWorldQuaternion(_qp); _qd.setFromAxisAngle(axis, ang);
+  _q.copy(_qp).invert().multiply(_qd).multiply(_qp); bone.quaternion.premultiply(_q);
+}
+function procedural(t, bp) {
+  const B = D.B, gn = S.gain;
+  D.model.updateMatrixWorld(true);
+  B.hips.getWorldQuaternion(_qb).multiply(_q.copy(D.hipsRestQ).invert());
+  RIGHT.set(1, 0, 0).applyQuaternion(_qb); FWD.set(0, 0, 1).applyQuaternion(_qb);
+  B.hips.parent.getWorldQuaternion(_qp); B.hips.parent.getWorldScale(_s);
+  _v.set(0, -S.kickEnv * 0.04 * gn, 0).applyQuaternion(_qp.invert()).divideScalar(_s.x);
+  B.hips.position.add(_v);
+  const sway = bp === null ? Math.sin(t * 1.2) : Math.sin(bp * Math.PI);
+  rotWorld(B.spine, RIGHT, S.kickEnv * 0.13 * gn);
+  rotWorld(B.spine, FWD, sway * 0.05 * bands.mid * gn);
+  rotWorld(B.head, RIGHT, (S.snareEnv * 0.28 * gn - 0.04 * S.kickEnv) * (1 - 0.6 * M.blend));
+  rotWorld(B.head, FWD, sway * 0.07 * gn);
+  const raise = S.drop * (0.75 + 0.25 * Math.sin((bp ?? t) * Math.PI * 0.5));
+  const own = 1 - M.blend;
+  rotWorld(B.lArm, FWD, raise * 0.95 * own);
+  rotWorld(B.rArm, FWD, -raise * 0.95 * own);
+  const fl = bands.high * 0.45 * gn * own;
+  rotWorld(B.lHand, RIGHT, Math.sin(t * 13) * fl);
+  rotWorld(B.rHand, RIGHT, Math.sin(t * 13 + 1.7) * fl);
+}
+
+
+/* ---------- mirror mode: webcam pose drives the skeleton ---------- */
+const MP_VER = '0.10.14';
+const MP_BASE = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VER}`;
+const MP_MODEL = 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task';
+const M = { on: false, loading: false, landmarker: null, stream: null, lastT: 0, lastVT: -1, pose: null, blend: 0, mirror: true, filt: new Map(), bones: null };
+const LM = { nose: 0, lEar: 7, rEar: 8, lSh: 11, rSh: 12, lEl: 13, rEl: 14, lWr: 15, rWr: 16, lIdx: 19, rIdx: 20, lHip: 23, rHip: 24, lKn: 25, rKn: 26, lAn: 27, rAn: 28, lFt: 31, rFt: 32 };
+const SIDE_SWAP = n => n[0] === 'l' ? 'r' + n.slice(1) : n[0] === 'r' ? 'l' + n.slice(1) : n;
+const LIMBS = [
+  ['LeftArm', 'LeftForeArm', 'lSh', 'lEl', 1], ['LeftForeArm', 'LeftHand', 'lEl', 'lWr', 1], ['LeftHand', 'LeftHandMiddle1', 'lWr', 'lIdx', 0.6],
+  ['RightArm', 'RightForeArm', 'rSh', 'rEl', 1], ['RightForeArm', 'RightHand', 'rEl', 'rWr', 1], ['RightHand', 'RightHandMiddle1', 'rWr', 'rIdx', 0.6],
+  ['LeftUpLeg', 'LeftLeg', 'lHip', 'lKn', 1], ['LeftLeg', 'LeftFoot', 'lKn', 'lAn', 1], ['LeftFoot', 'LeftToeBase', 'lAn', 'lFt', 0.7],
+  ['RightUpLeg', 'RightLeg', 'rHip', 'rKn', 1], ['RightLeg', 'RightFoot', 'rKn', 'rAn', 1], ['RightFoot', 'RightToeBase', 'rAn', 'rFt', 0.7],
+];
+async function toggleMirror() {
+  if (M.on || M.loading) { stopMirror(); return; }
+  if (!D.ready) return;
+  M.loading = true; setMirrorBtn();
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }, audio: false }); }
+  catch (err) { M.loading = false; setMirrorBtn(); blocked('camera', err); return; }
+  const video = $('cam'); video.srcObject = stream; video.hidden = false; video.classList.toggle('raw', !M.mirror);
+  M.stream = stream; video.play().catch(() => {});
+  try {
+    if (!M.landmarker) {
+      showToast('Loading body tracking…');
+      const vision = await import(`${MP_BASE}/vision_bundle.mjs`);
+      const files = await vision.FilesetResolver.forVisionTasks(`${MP_BASE}/wasm`);
+      const opts = delegate => ({ baseOptions: { modelAssetPath: MP_MODEL, delegate }, runningMode: 'VIDEO', numPoses: 1 });
+      try { M.landmarker = await vision.PoseLandmarker.createFromOptions(files, opts('GPU')); }
+      catch (e) { M.landmarker = await vision.PoseLandmarker.createFromOptions(files, opts('CPU')); }
+      hideToast();
+    }
+  } catch (err) {
+    console.error(err); stopMirror();
+    showToast('Body tracking could not load. Check your connection and try again.'); setTimeout(hideToast, 4000); return;
+  }
+  if (!M.stream) return;
+  M.loading = false; M.on = true; M.pose = null; setMirrorBtn();
+  if (audio.mode === 'none') {
+    $('welcome').hidden = true; $('transport').hidden = false;
+    $('nowTitle').textContent = 'Mirror mode'; $('nowMeta').textContent = 'Step back so your arms are in view · add music any time';
+  }
+}
+function stopMirror() {
+  M.on = false; M.loading = false; M.pose = null;
+  if (M.stream) M.stream.getTracks().forEach(t => t.stop());
+  M.stream = null; const v = $('cam'); v.srcObject = null; v.hidden = true; setMirrorBtn();
+}
+function setMirrorBtn() { $('mirrorBtn2').classList.toggle('icon--on', M.on || M.loading); }
+function trackPose() {
+  const v = $('cam');
+  if (!M.on || !M.landmarker || v.readyState < 2) return;
+  const t = performance.now();
+  if (t - M.lastT < 33 || v.currentTime === M.lastVT) return;
+  M.lastT = t; M.lastVT = v.currentTime;
+  try {
+    const r = M.landmarker.detectForVideo(v, t);
+    const w = r.worldLandmarks && r.worldLandmarks[0];
+    M.pose = w && w.length >= 33 ? w : null;
+  } catch (e) { console.warn(e); }
+}
+const _ma = new THREE.Vector3(), _mb = new THREE.Vector3(), _mc = new THREE.Vector3(), _md = new THREE.Vector3(), _me = new THREE.Vector3(), _mf = new THREE.Vector3();
+const _mUp = new THREE.Vector3(), _mx = new THREE.Vector3(), _my = new THREE.Vector3(), _mz = new THREE.Vector3(), _mm = new THREE.Matrix4();
+const _qDh = new THREE.Quaternion(), _qDs = new THREE.Quaternion(), _qDhead = new THREE.Quaternion(), _qT = new THREE.Quaternion(), _qP = new THREE.Quaternion(), _qL = new THREE.Quaternion(), _qA = new THREE.Quaternion(), _qMix = new THREE.Quaternion();
+const _rd = new THREE.Vector3(), _td = new THREE.Vector3();
+function lm(name, out) {
+  const p = M.pose[LM[M.mirror ? SIDE_SWAP(name) : name]];
+  return out.set(M.mirror ? -p.x : p.x, -p.y, -p.z);
+}
+function lmVis(name) { const p = M.pose[LM[M.mirror ? SIDE_SWAP(name) : name]]; return smooth(0.45, 0.8, p.visibility ?? 1); }
+function basisQ(xv, upv, out) {
+  _mx.copy(xv).normalize(); _my.copy(upv).addScaledVector(_mx, -upv.dot(_mx)).normalize(); _mz.crossVectors(_mx, _my);
+  return out.setFromRotationMatrix(_mm.makeBasis(_mx, _my, _mz));
+}
+function mirrorApply(bone, worldTarget, w, dt) {
+  if (w <= 0.001) return;
+  bone.parent.getWorldQuaternion(_qP);
+  _qL.copy(_qP).invert().multiply(worldTarget);
+  let f = M.filt.get(bone.name);
+  if (!f) { f = _qL.clone(); M.filt.set(bone.name, f); } else f.slerp(_qL, 1 - Math.exp(-dt * 16));
+  bone.quaternion.slerp(f, clamp(w * M.blend, 0, 1));
+}
+function driveWorld(name, delta, w, dt) { const b = M.bones[name]; if (b) mirrorApply(b, _qT.copy(delta).multiply(D.restW.get(b.name)), w, dt); }
+function driveLimb(name, child, from, to, w, dt) {
+  const b = M.bones[name], c = M.bones[child]; if (!b || !c) return;
+  b.parent.getWorldQuaternion(_qP);
+  const Dp = _qP.multiply(_qA.copy(D.restW.get(b.parent.name) || new THREE.Quaternion()).invert());
+  _rd.subVectors(D.restP.get(c.name), D.restP.get(b.name)).normalize().applyQuaternion(Dp);
+  _td.subVectors(lm(to, _me), lm(from, _mf)).normalize();
+  _qT.setFromUnitVectors(_rd, _td).multiply(Dp).multiply(D.restW.get(b.name));
+  mirrorApply(b, _qT, w * Math.min(lmVis(from), lmVis(to)), dt);
+}
+function applyMirror(dt) {
+  M.blend = damp(M.blend, M.on && M.pose ? 1 : 0, M.pose ? 3 : 1.5, dt);
+  if (M.blend < 0.01 || !M.pose) return;
+  if (!M.bones) { M.bones = {}; for (const b of D.skel.bones) M.bones[b.name.replace('mixamorig', '')] = b; }
+  lm('lHip', _ma); lm('rHip', _mb); lm('lSh', _mc); lm('rSh', _md);
+  const midHip = _ma.clone().add(_mb).multiplyScalar(0.5), midSh = _mc.clone().add(_md).multiplyScalar(0.5);
+  _mUp.subVectors(midSh, midHip);
+  basisQ(_ma.clone().sub(_mb), _mUp, _qDh);
+  basisQ(_mc.clone().sub(_md), _mUp, _qDs);
+  lm('lEar', _me); lm('rEar', _mf);
+  const midEar = _me.clone().add(_mf).multiplyScalar(0.5);
+  basisQ(_me.clone().sub(_mf), midEar.sub(midSh), _qDhead);
+  const torso = Math.min(lmVis('lSh'), lmVis('rSh'));
+  const hipsW = torso * Math.min(lmVis('lHip'), lmVis('rHip'));
+  const headW = torso * Math.min(lmVis('lEar'), lmVis('rEar'));
+  D.model.updateMatrixWorld(true);
+  driveWorld('Hips', _qDh, hipsW, dt);
+  M.bones.Hips.position.lerp(D.hipsRestLocal, M.blend * hipsW * 0.8);
+  driveWorld('Spine', _qMix.copy(_qDh).slerp(_qDs, 0.33), torso, dt);
+  driveWorld('Spine1', _qMix.copy(_qDh).slerp(_qDs, 0.66), torso, dt);
+  driveWorld('Spine2', _qDs, torso, dt);
+  driveWorld('LeftShoulder', _qDs, torso, dt);
+  driveWorld('RightShoulder', _qDs, torso, dt);
+  driveWorld('Neck', _qMix.copy(_qDs).slerp(_qDhead, 0.5), headW, dt);
+  driveWorld('Head', _qDhead, headW, dt);
+  for (const [name, child, from, to, w] of LIMBS) driveLimb(name, child, from, to, w * torso, dt);
+}
+
+/* ---------- UI ---------- */
+const SEC_LABEL = { calm: ['Calm', 'var(--ink-dim)'], groove: ['Groove', 'var(--mid)'], break: ['Break', 'var(--mid2)'], drop: ['Drop', 'var(--high)'] };
+function updateChip() { const [l, c] = SEC_LABEL[S.sec]; const el = $('chip'); el.textContent = l; el.style.setProperty('--chip', c); el.style.borderColor = S.sec === 'calm' ? '' : c; }
+function showToast(m) { const el = $('toast'); el.textContent = m; el.hidden = false; }
+function hideToast() { $('toast').hidden = true; }
+function onSourceStarted(title, meta) {
+  $('welcome').hidden = true; $('transport').hidden = false; $('bpm').hidden = false; $('beats').hidden = false;
+  $('nowTitle').textContent = title; $('nowMeta').textContent = meta; $('bpmv').textContent = Math.round(audio.bpm);
+  audio.paused = false; setPlayIcon();
+  S.lastBeatIdx = -1; S.lastBar = -1; S.barInSec = 0;
+  if (navigator.wakeLock) navigator.wakeLock.request('screen').catch(() => {});
+}
+function setPlayIcon() { $('icoPause').style.display = audio.paused ? 'none' : ''; $('icoPlay').style.display = audio.paused ? '' : 'none'; $('playBtn').setAttribute('aria-label', audio.paused ? 'Play' : 'Pause'); }
+$('demoBtn').onclick = $('demoBtn2').onclick = () => startDemo();
+$('micBtn').onclick = $('micBtn2').onclick = () => { if (audio.mode === 'mic') { stopAll(); $('nowTitle').textContent = 'Stopped'; $('nowMeta').textContent = 'Pick a source'; } else startMic(); };
+$('mirrorBtn').onclick = $('mirrorBtn2').onclick = () => toggleMirror();
+$('loadBtn').onclick = $('loadBtn2').onclick = () => { ensureCtx(); $('file').click(); };
+$('file').onchange = e => { const f = e.target.files[0]; if (f) loadTrack(f); e.target.value = ''; };
+$('playBtn').onclick = async () => {
+  if (!audio.ctx) return;
+  if (audio.ctx.state === 'running') { await audio.ctx.suspend(); audio.paused = true; } else { await audio.ctx.resume(); audio.paused = false; }
+  setPlayIcon();
+};
+addEventListener('dragover', e => e.preventDefault());
+addEventListener('drop', e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f && f.type.startsWith('audio')) loadTrack(f); });
+
+/* ---------- frame loop ---------- */
+const clock = new THREE.Clock();
+const FLIP = new THREE.Matrix4().makeScale(1, -1, 1);
+let T = 0, uiTimer = 0;
+function frame() {
+  requestAnimationFrame(frame);
+  const dt = Math.min(clock.getDelta(), 0.05); T += dt;
+  const now = performance.now() / 1000;
+  const live = readBands(dt, now);
+  const running = audio.ctx && audio.ctx.state === 'running' && audio.mode !== 'none';
+  const bp = running ? beatPos() : null;
+
+  if (running && audio.mode === 'demo') {
+    const ct = audio.ctx.currentTime;
+    while (audio.events.length && audio.events[0].t <= ct) {
+      const e = audio.events.shift();
+      if (e.type === 'bar') { enterSection(e.sec, e.bar); onBar(e.bar); }
+      else if (e.type === 'beat') onBeat(e.n);
+      else if (e.type === 'kick') onKick(e.v, now);
+      else if (e.type === 'snare') onSnare();
+      else if (e.type === 'drop') reform();
+    }
+  } else if (running && audio.mode === 'file') {
+    const bi = Math.floor(bp);
+    if (bi !== S.lastBeatIdx) {
+      S.lastBeatIdx = bi; onBeat(((bi % 4) + 4) % 4);
+      if (((bi % 4) + 4) % 4 === 0) { enterSection(fileSection(), bi / 4); onBar(bi / 4); }
+    }
+    for (const e of live) e.type === 'kick' ? onKick(e.v, now) : onSnare();
+  } else if (running && audio.mode === 'mic') {
+    if (audio.ctx.currentTime - audio.lastEst > 1) { audio.lastEst = audio.ctx.currentTime; estimateTempo(); }
+    if (bp !== null) {
+      const bi = Math.floor(bp);
+      if (bi !== S.lastBeatIdx) { S.lastBeatIdx = bi; const n = ((bi % 4) + 4) % 4; onBeat(n); if (n === 0) { enterSection(micSection()); onBar(bi / 4); } }
+    } else if (now - (S.lastFreeBar || 0) > 2) { S.lastFreeBar = now; enterSection(micSection()); }
+    for (const e of live) e.type === 'kick' ? onKick(e.v, now) : onSnare();
+  } else if (!running && S.sec !== 'calm' && audio.mode === 'none') enterSection('calm');
+
+  S.kickEnv *= Math.exp(-dt * 9); S.snareEnv *= Math.exp(-dt * 7); S.pulse *= Math.exp(-dt * 5);
+  const gainGoal = { calm: 0.45, groove: 1, break: 0.55, drop: 1.4 }[S.sec];
+  S.gain = damp(S.gain, gainGoal, 2, dt);
+  S.drop = damp(S.drop, S.sec === 'drop' ? 1 : 0, 2.5, dt);
+  if (S.sec === 'break') S.dissolveGoal = audio.mode === 'demo' ? clamp(0.15 + S.barInSec / 8 * 0.85, 0, 1) : 0.5;
+  else S.dissolveGoal = S.sec === 'calm' ? 0.06 : 0;
+  S.dissolve = damp(S.dissolve, S.dissolveGoal, S.dissolveGoal < S.dissolve ? 7 : 0.9, dt);
+  const energy = clamp((bands.bass + bands.mid + bands.high) / 3, 0, 1);
+
+  if (D.ready) {
+    for (const k in D.acts) if (D.acts[k].action.getEffectiveWeight() > 0 || k === D.cur) lockPhase(D.acts[k], bp);
+    D.mixer.update(dt);
+    trackPose(); applyMirror(dt);
+    procedural(T, bp);
+    D.model.updateMatrixWorld(true);
+    D.skel.update();
+    D.body.matrix.copy(D.mesh.matrixWorld);
+    D.refl.matrix.multiplyMatrices(FLIP, D.mesh.matrixWorld);
+    const U = D.U;
+    U.uTime.value = T; U.uBass.value = bands.bass; U.uMid.value = bands.mid; U.uHigh.value = bands.high;
+    U.uPulse.value = S.pulse; U.uDissolve.value = S.dissolve;
+    if (S.sec === 'break' && running) { S.emitAcc += dt * 140 * S.dissolve; const n = Math.floor(S.emitAcc); S.emitAcc -= n; burst(n, 0.35); }
+  }
+  updateEmbers(dt, T); updateDust(dt, energy);
+  updateSpots(dt, running ? (S.sec === 'drop' ? 1.2 : S.sec === 'groove' ? 0.8 : 0.45) : 0.35);
+  floorMat.uniforms.uTime.value = now; floorMat.uniforms.uEnergy.value = energy;
+  bloom.strength = 0.42 + S.drop * 0.15 + S.pulse * 0.08;
+
+  if (!dragging && now - lastInteract > 4 && !REDUCED) controls.autoRotate = true;
+  controls.autoRotateSpeed = 0.3 + S.drop * 0.5;
+  baseDist = fitDist * userZoom;
+  if (!dragging) {
+    const goal = baseDist * (S.sec === 'break' ? 0.7 : S.sec === 'drop' ? 1.04 : 1);
+    const off = _v.subVectors(camera.position, controls.target); const d = off.length();
+    off.setLength(damp(d, clamp(goal, controls.minDistance, controls.maxDistance), 0.8, dt));
+    camera.position.copy(controls.target).add(off);
+  }
+  controls.update();
+  composer.render();
+
+  uiTimer += dt;
+  if (uiTimer > 0.25) {
+    uiTimer = 0;
+    layoutFit();
+    if (audio.mode === 'file' && audio.buffer) $('prog').style.width = (trackPos() / audio.buffer.duration * 100).toFixed(2) + '%';
+    if (audio.mode === 'demo' && bp !== null) { const bar = demoBar(Math.floor(bp / 4)); $('prog').style.width = (bar / 48 * 100).toFixed(1) + '%'; $('nowMeta').textContent = `A minor · 118 BPM · bar ${bar + 1}`; }
+  }
+}
+
+loadDancer().then(() => {
+  $('hint').textContent = 'Drag to orbit, pinch or scroll to zoom. Plays best with sound on.';
+  for (const id of ['demoBtn', 'loadBtn', 'micBtn', 'mirrorBtn']) $(id).disabled = false;
+}).catch(err => {
+  console.error(err);
+  $('hint').textContent = 'The dancer model did not load. Reload the page to try again.';
+});
+frame();
+</script>
+
+</body></html>
