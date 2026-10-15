@@ -1027,7 +1027,13 @@ function setAction(name, fade = 0.8) {
 function pickMove(sec) {
   if (!D.ready) return null;
   const pool = (D.pools[sec] || D.pools.groove).filter(n => n !== D.cur);
-  return pool.length ? pool[Math.floor(Math.random() * pool.length)] : D.cur;
+  if (!pool.length) return D.cur;
+  // like a dancer, prefer moves that suit this tempo: a move played 30% faster or slower than it
+  // was danced looks wrong, so moves that fit closely are far more likely to be chosen
+  const w = pool.map(n => { const l = Math.log(stepFit(D.acts[n]).r); return Math.exp(-l * l / 0.02) + 0.01; });
+  let x = Math.random() * w.reduce((a, b) => a + b, 0);
+  for (let i = 0; i < pool.length; i++) { x -= w[i]; if (x <= 0) return pool[i]; }
+  return pool[pool.length - 1];
 }
 function nextMove(sec, fade) { const m = pickMove(sec); if (m) setAction(m, fade); S.barsOnMove = 0; }
 function enterSection(sec, bar) {
