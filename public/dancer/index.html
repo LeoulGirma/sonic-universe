@@ -892,7 +892,15 @@ async function loadDancer() {
   pools.drop = pools.drop.filter(n => n !== 'samba' || pools.drop.length < 4);
   pools.break = pools.calm;
   D.pools = pools;
-  if (new URLSearchParams(location.search).has('debug')) window.__dancer = { D, S, audio, stepFit, plantFeet, cleanClip, get legs() { return D.legs; } };
+  // a left/right mirrored twin of every mocap move, so repeats don't read as the same loop
+  for (const mv of movesJson) {
+    const e = acts[mv.name]; if (!e) continue;
+    try { const mc = buildMirror(model, skel, e.action.getClip()); acts[mv.name + '~m'] = { ...e, action: mixer.clipAction(mc), label: (e.label || mv.name) + ' (mirrored)', base: mv.name }; }
+    catch (err) { console.warn('mirror', mv.name, err); }
+  }
+  for (const k in acts) acts[k].base = acts[k].base || (k === 'mirror' ? 'samba' : k);
+  moveFeatures(acts, B, hipsParentQ);
+  if (new URLSearchParams(location.search).has('debug')) window.__dancer = { D, S, audio, stepFit, plantFeet, cleanClip, CH, songCharacter, pickMove, get legs() { return D.legs; } };
   for (const k in acts) { acts[k].armK = armRoom(acts[k].action.getClip()); acts[k].action.play().setEffectiveWeight(k === 'idle' ? 1 : 0); }
   Object.assign(D, { ready: true, model, mesh, skel, B, hipsRestQ, body, refl, U, mixer, acts, cur: 'idle', wpos, vBand, nv, idx });
 }
@@ -943,6 +951,18 @@ function retargetFromDeltas(mv, skel, parentQ) {
   }
   const F = mv.frames, n = F + 1, times = new Float32Array(n);
   const out = new Map(bones.map(b => [b.name, new Float32Array(n * 4)])), hp = new Float32Array(n * 3);
+  // newer moves carry each bone's rest direction in the source skeleton: turn the dancer's rest
+  // direction onto it first (CMU legs and arms rest at different angles from this body)
+  const DCHILD = { Spine: 'Spine1', Spine1: 'Spine2', Spine2: 'Neck', Neck: 'Head', LeftShoulder: 'LeftArm', LeftArm: 'LeftForeArm', LeftForeArm: 'LeftHand',
+    RightShoulder: 'RightArm', RightArm: 'RightForeArm', RightForeArm: 'RightHand', LeftUpLeg: 'LeftLeg', LeftLeg: 'LeftFoot', LeftFoot: 'LeftToeBase',
+    RightUpLeg: 'RightLeg', RightLeg: 'RightFoot', RightFoot: 'RightToeBase' };
+  const align = new Map();
+  if (mv.restDir) for (const k in mv.restDir) {
+    const a = D.restP.get('mixamorig' + k), b = DCHILD[k] && D.restP.get('mixamorig' + DCHILD[k]);
+    if (!a || !b) continue;
+    align.set(k, new THREE.Quaternion().setFromUnitVectors(b.clone().sub(a).normalize(), new THREE.Vector3().fromArray(mv.restDir[k]).normalize()));
+  }
+  const legLen = (() => { const P = n => D.restP.get('mixamorig' + n); return P('LeftUpLeg').distanceTo(P('LeftLeg')) + P('LeftLeg').distanceTo(P('LeftFoot')); })();
   const W = new Map(), d = new THREE.Quaternion(), l = new THREE.Quaternion(), pinv = parentQ.clone().invert();
   const hipsRest = D.restP.get('mixamorigHips'), hipsBone = byName.get('mixamorigHips'), parentPos = hipsBone.parent.getWorldPosition(new THREE.Vector3()), ps = hipsBone.parent.getWorldScale(new THREE.Vector3()).x;
   const v = new THREE.Vector3();
@@ -950,12 +970,12 @@ function retargetFromDeltas(mv, skel, parentQ) {
     const fi = f % F; times[f] = f / mv.fps;
     for (const b of order) {
       const key = src.get(b.name);
-      if (key) d.fromArray(mv.bones[key], fi * 4).normalize(); else d.identity();
+      if (key) { d.fromArray(mv.bones[key], fi * 4).normalize(); if (align.has(key)) d.multiply(align.get(key)); } else d.identity();
       const w = (W.get(b.name) || new THREE.Quaternion()).copy(d).multiply(D.restW.get(b.name)); W.set(b.name, w);
       const pw = W.get(b.parent.name) || parentQ;
       l.copy(pw).invert().multiply(w); l.toArray(out.get(b.name), f * 4);
     }
-    v.set(mv.hips[fi * 3], mv.hips[fi * 3 + 1], mv.hips[fi * 3 + 2]).add(hipsRest).sub(parentPos).applyQuaternion(pinv).divideScalar(ps);
+    v.set(mv.hips[fi * 3], mv.hips[fi * 3 + 1], mv.hips[fi * 3 + 2]); if (mv.hipUnit === 'leg') v.multiplyScalar(legLen); v.add(hipsRest).sub(parentPos).applyQuaternion(pinv).divideScalar(ps);
     v.toArray(hp, f * 3);
   }
   const tracks = bones.map(b => new THREE.QuaternionKeyframeTrack(b.name + '.quaternion', times, out.get(b.name)));
@@ -1071,16 +1091,73 @@ function setAction(name, fade = 0.8) {
   } else { next.time = e.t0; next.setEffectiveTimeScale(1); }
   next.crossFadeFrom(prev, fade, false); D.cur = name;
 }
+/* What the music asks for right now, from what is heard (any source): how intense it is against
+   its own recent peak, how busy (spectral flux), how bass-heavy, and the melody's register. */
+const CH = { e: 0, eP: 0.05, flux: 0, fluxP: 0.02, bassW: 0.5, bLo: 1, bHi: 0, mel: 0.5, mLo: 1e9, mHi: 0, prev: null };
+function readCharacter(dt) {
+  if (!audio.ctx || audio.mode === 'none' || !audio.freq) return;
+  const f = audio.freq, hz = audio.ctx.sampleRate / audio.analyser.fftSize;
+  let fl = 0; if (CH.prev) for (let i = 2; i < 400; i++) { const d = f[i] - CH.prev[i]; if (d > 0) fl += d; } else CH.prev = new Uint8Array(f.length);
+  CH.prev.set(f);
+  const k = 1 - Math.exp(-dt / 2.5);
+  const all = (bandAvg(30, 150) + bandAvg(300, 2500) + bandAvg(4000, 12000)) / 3;
+  CH.e += (all - CH.e) * k; CH.eP = Math.max(CH.e, CH.eP * Math.exp(-dt / 60), 0.02);
+  CH.flux += (fl / 400 - CH.flux) * k; CH.fluxP = Math.max(CH.flux, CH.fluxP * Math.exp(-dt / 60), 0.005);
+  const b = bandAvg(30, 150), m = bandAvg(300, 2500), bw = b / Math.max(1e-3, b + m);
+  CH.bassW += (bw - CH.bassW) * k; CH.bLo = Math.min(CH.bLo + dt * 0.002, CH.bassW); CH.bHi = Math.max(CH.bHi - dt * 0.002, CH.bassW);
+  // melody register: the loudest pitch between 200 Hz and 1.6 kHz, on a log scale against its range
+  let pk = 0, pi = 0; for (let i = Math.ceil(200 / hz); i < 1600 / hz; i++) if (f[i] > pk) { pk = f[i]; pi = i; }
+  if (pk > 90) { const l = Math.log2(pi * hz); CH.mLo = Math.min(CH.mLo + dt * 0.02, l); CH.mHi = Math.max(CH.mHi - dt * 0.02, l); CH.mel += (clamp((l - CH.mLo) / Math.max(0.5, CH.mHi - CH.mLo), 0, 1) - CH.mel) * (1 - Math.exp(-dt / 0.18)); }
+}
+function songCharacter() {
+  const eRel = clamp(CH.e / CH.eP, 0, 1), fRel = clamp(CH.flux / CH.fluxP, 0, 1);
+  let I = clamp((0.55 * eRel + 0.45 * fRel - 0.45) / 0.5, 0, 1);
+  if (S.sec === 'calm' || S.sec === 'break') I *= 0.55; else if (S.sec === 'drop') I = Math.max(I, 0.85);
+  const bass = CH.bHi > CH.bLo + 0.02 ? clamp((CH.bassW - CH.bLo) / (CH.bHi - CH.bLo), 0, 1) : 0.5;
+  return { I, busy: fRel, bass };
+}
+/* Each move's own character from its motion: energy (how fast the body moves), sharpness (how
+   sudden), bounce (hips up and down against side to side), ranked across the set. */
+function moveFeatures(acts) {
+  const keys = Object.keys(acts).filter(k => k !== 'idle'), raw = {};
+  const q0 = new THREE.Quaternion(), q1 = new THREE.Quaternion(), q2 = new THREE.Quaternion();
+  for (const k of keys) {
+    const clip = acts[k].action.getClip(); let sp = 0, ac = 0, c = 0;
+    for (const tr of clip.tracks) {
+      if (!tr.name.endsWith('.quaternion') || /Hand|Toe|Shoulder/.test(tr.name)) continue;
+      const v = tr.values, n = v.length / 4, dt = (tr.times[n - 1] - tr.times[0]) / Math.max(1, n - 1);
+      for (let i = 1; i < n - 1; i++) { q0.fromArray(v, (i - 1) * 4); q1.fromArray(v, i * 4); q2.fromArray(v, (i + 1) * 4); const a = q0.angleTo(q1) / dt, b = q1.angleTo(q2) / dt; sp += a; ac += Math.abs(b - a) / dt; c++; }
+    }
+    const hp = clip.tracks.find(t => t.name === 'mixamorigHips.position');
+    let vy = 0, vx = 0;
+    if (hp) { const v = hp.values, n = v.length / 3; let my = 0, mx = 0; for (let i = 0; i < n; i++) { my += v[i * 3 + 1]; mx += v[i * 3]; } my /= n; mx /= n; for (let i = 0; i < n; i++) { vy += (v[i * 3 + 1] - my) ** 2; vx += (v[i * 3] - mx) ** 2; } }
+    raw[k] = { e: sp / Math.max(1, c), sh: ac / Math.max(1, c), bo: Math.sqrt(vy) / (Math.sqrt(vx) + Math.sqrt(vy) + 1e-6) };
+  }
+  for (const f of ['e', 'sh', 'bo']) {
+    const sorted = keys.map(k => raw[k][f]).sort((a, b) => a - b);
+    for (const k of keys) acts[k][f] = sorted.indexOf(raw[k][f]) / Math.max(1, sorted.length - 1);
+  }
+  acts.idle.e = 0; acts.idle.sh = 0; acts.idle.bo = 0.3;
+}
 function pickMove(sec) {
   if (!D.ready) return null;
-  const pool = (D.pools[sec] || D.pools.groove).filter(n => n !== D.cur);
-  if (!pool.length) return D.cur;
-  // like a dancer, prefer moves that suit this tempo: a move played 30% faster or slower than it
-  // was danced looks wrong, so moves that fit closely are far more likely to be chosen
-  const w = pool.map(n => { const l = Math.log(stepFit(D.acts[n]).r); return Math.exp(-l * l / 0.02) + 0.01; });
-  let x = Math.random() * w.reduce((a, b) => a + b, 0);
-  for (let i = 0; i < pool.length; i++) { x -= w[i]; if (x <= 0) return pool[i]; }
-  return pool[pool.length - 1];
+  const C = songCharacter(), cur = D.acts[D.cur];
+  // like a dancer: small and fluid when the music is sparse, big and sharp when it is dense, bouncy
+  // when it is bass-heavy; never the same move (or its mirror) twice in a row; moves that suit the
+  // tempo are far more likely
+  const names = Object.keys(D.acts).filter(n => n !== D.cur && D.acts[n].base !== (cur && cur.base) && (n !== 'idle' || C.I < 0.25));
+  if (!names.length) return D.cur;
+  const w = names.map(n => {
+    const e = D.acts[n], l = Math.log(stepFit(e).r);
+    const d2 = (e.e - C.I) ** 2 + 0.5 * (e.sh - C.busy) ** 2 + 0.4 * (e.bo - C.bass) ** 2 + 2.5 * l * l;
+    return Math.exp(-d2 / 0.06) + 1e-4;
+  });
+  let x = Math.random() * w.reduce((a, b) => a + b, 0), pick = names[names.length - 1];
+  for (let i = 0; i < names.length; i++) { x -= w[i]; if (x <= 0) { pick = names[i]; break; } }
+  // half time in sparse, laid-back passages: the same move at half the step rate
+  const pe = D.acts[pick]; pe.slow = false;
+  if (C.busy < 0.35 && C.I < 0.6) { const r2 = pe.P / (audio.beat * stepFit(pe).m * 2); pe.slow = r2 > 0.7 && r2 < 1.45; }
+  return pick;
 }
 function nextMove(sec, fade) { const m = pickMove(sec); if (m) setAction(m, fade); S.barsOnMove = 0; }
 function enterSection(sec, bar) {
@@ -1090,7 +1167,14 @@ function enterSection(sec, bar) {
   if (sec === 'drop' && (was === 'break' || was === 'calm')) reform();
   updateChip();
 }
+/* hit and hold a pose for one step of the current move, on a big accent */
+function hitPose() {
+  const bp = beatPos(); if (bp === null || !D.ready) return;
+  const e = D.acts[D.cur]; const m = e ? stepFit(e).m : 1;
+  S.holdEnd = Math.floor(bp + 0.5) + Math.max(1, Math.min(2, m)); S.lastHoldBar = S.barCount;
+}
 function reform() {
+  hitPose();
   S.dissolve = Math.min(S.dissolve, 0.9); S.dissolveGoal = 0; S.pulse = 1.4;
   burst(MOBILE ? 600 : 1100, 1.6);
   const t = performance.now() / 1000; PAL_LIST.forEach((c, i) => ripple(t + i * 0.08, 1.4, c));
@@ -1127,6 +1211,7 @@ function liveBar() {
   updateChip();
 }
 function onBeat(n) {
+  if (n === 1 && (S.sec === 'drop' || S.sec === 'groove') && (S.barCount - S.phrase0) % 8 === 0 && S.barCount - (S.lastHoldBar ?? -99) >= 8 && S.snareEnv > 0.5 && songCharacter().I > 0.7) hitPose();
   if (S.sec === 'drop') spots.forEach((s, i) => s.goalCol.copy(PAL_LIST[(n + i * 2) % 4]));
   else if (S.sec === 'groove') { spots[0].goalCol.copy(PAL.bass); spots[1].goalCol.copy(n % 2 ? PAL.mid : PAL.mid2); }
   else { spots[0].goalCol.copy(PAL.bass).multiplyScalar(0.6); spots[1].goalCol.copy(PAL.mid2).multiplyScalar(0.6); }
@@ -1165,6 +1250,8 @@ function lockPhase(entry, bp) {
   if (audio.paused) { a.setEffectiveTimeScale(0.12); return; }
   if (bp === null) { a.setEffectiveTimeScale(1); return; }
   const { m, r } = stepFit(entry);
+  // a held pose: freeze for exactly one step, so the move resumes on the beat where it left off
+  if (S.holdEnd !== undefined && bp < S.holdEnd && entry === D.acts[D.cur]) { a.setEffectiveTimeScale(0); return; }
   const desired = ((bp / m) % 1 + 1) % 1;
   const actual = (((a.time - entry.t0) / entry.P) % 1 + 1) % 1;
   let err = desired - actual; if (err > 0.5) err -= 1; if (err < -0.5) err += 1;
@@ -1175,6 +1262,7 @@ function lockPhase(entry, bp) {
 function stepFit(entry) {
   let bestM = entry.ms[0], bestR = 1, bestErr = 1e9;
   for (const m of entry.ms) { const r = entry.P / (audio.beat * m); const e = Math.abs(Math.log(r)); if (e < bestErr) { bestErr = e; bestM = m; bestR = r; } }
+  if (entry.slow) { bestM *= 2; bestR /= 2; }
   return { m: bestM, r: bestR };
 }
 
@@ -1202,8 +1290,15 @@ function procedural(t, bp) {
   S.armRoom = damp(S.armRoom ?? 1, room, 2, 1 / 60);
   const raise = S.drop * (0.75 + 0.25 * Math.sin((bp ?? t) * Math.PI * 0.5)) * S.armRoom;
   const own = 1 - M.blend;
-  rotWorld(B.lArm, FWD, raise * 0.95 * own);
-  rotWorld(B.rArm, FWD, -raise * 0.95 * own);
+  // the hands follow the melody: arms lift as the tune climbs, where the move leaves them room
+  const melAmt = clamp((bands.mid - 0.25) / 0.5, 0, 1) * S.armRoom * own;
+  S.melArm = damp(S.melArm ?? 0, (CH.mel - 0.5) * 0.55 * melAmt, 6, 1 / 60);
+  // a held pose on an accent: chest lifts, arms open a little, eased in and out
+  const holding = bp !== null && S.holdEnd !== undefined && bp < S.holdEnd;
+  S.holdAmt = damp(S.holdAmt ?? 0, holding ? 1 : 0, holding ? 18 : 5, 1 / 60);
+  rotWorld(B.spine, RIGHT, -0.12 * S.holdAmt * own);
+  rotWorld(B.lArm, FWD, (raise * 0.95 + S.melArm + 0.35 * S.holdAmt * S.armRoom) * own);
+  rotWorld(B.rArm, FWD, -(raise * 0.95 + S.melArm + 0.35 * S.holdAmt * S.armRoom) * own);
   const fl = bands.high * 0.45 * gn * own * (0.4 + 0.6 * S.armRoom);
   rotWorld(B.lHand, RIGHT, Math.sin(t * 13) * fl);
   rotWorld(B.rHand, RIGHT, Math.sin(t * 13 + 1.7) * fl);
@@ -1414,7 +1509,7 @@ function frame() {
   requestAnimationFrame(frame);
   const dt = Math.min(clock.getDelta(), 0.05); T += dt;
   const now = performance.now() / 1000;
-  const live = readBands(dt, now);
+  const live = readBands(dt, now); readCharacter(dt);
   const running = audio.ctx && audio.ctx.state === 'running' && audio.mode !== 'none';
   const bp = running ? beatPos() : null;
 
