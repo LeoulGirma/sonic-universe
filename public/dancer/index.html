@@ -1122,7 +1122,8 @@ function songCharacter() {
   const busy = 0.45 + (fRel - 0.45) * sure;
   if (S.sec === 'calm' || S.sec === 'break') I *= 0.55; else if (S.sec === 'drop') I = Math.max(I, 0.85);
   const bass = CH.bassS !== undefined ? clamp(0.5 + (CH.bassW - CH.bassS) * 4 + (CH.bassS - 0.5) * 0.8, 0, 1) : 0.5;
-  return { I, busy, bass };
+  const half = CH.kpb !== undefined && CH.kpb < 0.62 && (CH.age ?? 0) > 8;
+  return { I, busy, bass, half };
 }
 /* Each move's own character from its motion: energy (how fast the body moves), sharpness (how
    sudden), bounce (hips up and down against side to side), ranked across the set. */
@@ -1158,8 +1159,10 @@ function pickMove(sec) {
   const w = names.map(n => {
     const e = D.acts[n], l = Math.log(stepFit(e).r);
     // grooves dance mid-sized; only drops reach for the biggest moves
-    const tE = S.sec === 'drop' ? 0.6 + 0.4 * C.I : 0.12 + 0.6 * C.I;
-    const d2 = (e.e - tE) ** 2 + 0.5 * (e.sh - C.busy) ** 2 + 0.4 * (e.bo - C.bass) ** 2 + 2.5 * l * l;
+    // a half-time feel (a kick every other beat: R&B, hip-hop, slow jams) dances smaller and smoother
+    const tE = (S.sec === 'drop' ? 0.6 + 0.4 * C.I : 0.12 + 0.6 * C.I) * (C.half ? 0.75 : 1);
+    const tS = C.half ? Math.min(C.busy, 0.35) : C.busy;
+    const d2 = (e.e - tE) ** 2 + 0.5 * (e.sh - tS) ** 2 + 0.4 * (e.bo - C.bass) ** 2 + 2.5 * l * l;
     // a dancer doesn't keep coming back to the same step: moves seen in the last few picks are rare
     const seen = (S.recent || []).lastIndexOf(e.base), fresh = seen < 0 ? 1 : 0.12 + 0.2 * ((S.recent.length - 1 - seen) / 4);
     return (Math.exp(-d2 / 0.06) + 1e-4) * fresh;
@@ -1169,7 +1172,7 @@ function pickMove(sec) {
   // half time in sparse, laid-back passages: the same move at half the step rate
   const pe = D.acts[pick]; pe.slow = false;
   S.recent = [...(S.recent || []), pe.base].slice(-5);
-  if (C.busy < 0.35 && C.I < 0.6) { const r2 = pe.P / (audio.beat * stepFit(pe).m * 2); pe.slow = r2 > 0.7 && r2 < 1.45; }
+  if ((C.busy < 0.35 && C.I < 0.6) || C.half) { const r2 = pe.P / (audio.beat * stepFit(pe).m * 2); pe.slow = r2 > 0.7 && r2 < 1.45; }
   return pick;
 }
 function nextMove(sec, fade) { const m = pickMove(sec); if (m) setAction(m, fade); S.barsOnMove = 0; }
@@ -1231,6 +1234,8 @@ function liveBar() {
   updateChip();
 }
 function onBeat(n) {
+  // the feel: kicks per beat over the last few bars (about 0.5 = half-time, laid back)
+  if (audio.mode !== 'none') { const kb = Math.min(2, CH.kicks || 0); CH.kicks = 0; CH.kpb = CH.kpb === undefined ? 1 : CH.kpb + (kb - CH.kpb) * 0.06; }
   if (n === 1 && (S.sec === 'drop' || S.sec === 'groove') && (S.barCount - S.phrase0) % 8 === 0 && S.barCount - (S.lastHoldBar ?? -99) >= 8 && S.snareEnv > 0.5 && songCharacter().I > 0.7) hitPose();
   if (S.sec === 'drop') spots.forEach((s, i) => s.goalCol.copy(PAL_LIST[(n + i * 2) % 4]));
   else if (S.sec === 'groove') { spots[0].goalCol.copy(PAL.bass); spots[1].goalCol.copy(n % 2 ? PAL.mid : PAL.mid2); }
@@ -1238,6 +1243,7 @@ function onBeat(n) {
   const dots = $('beats').children; for (let i = 0; i < 4; i++) dots[i].classList.toggle('on', i === n % 4);
 }
 function onKick(v, t) {
+  CH.kicks = (CH.kicks || 0) + 1;
   S.kickEnv = Math.max(S.kickEnv, v); S.pulse = Math.max(S.pulse, v * 0.8);
   ripple(t, 0.5 + v * 0.7, S.sec === 'drop' ? PAL_LIST[Math.floor(Math.random() * 4)] : PAL.bass);
   burst(Math.round((S.sec === 'drop' ? 110 : S.sec === 'groove' ? 45 : 12) * v * (MOBILE ? 0.6 : 1)), S.sec === 'drop' ? 1.2 : 0.7, 0);
@@ -1571,7 +1577,7 @@ function onSourceStarted(title, meta) {
   audio.paused = false; setPlayIcon();
   S.lastBeatIdx = -1; S.lastBar = -1; S.barInSec = 0;
   // a new song: forget the last one's levels (they made every song's first 20 s read as "maximum")
-  Object.assign(CH, { e: 0, eP: 0.05, flux: 0, fluxP: 0.02, fluxS: undefined, bassW: 0.5, bassS: undefined, mel: 0.5, mLo: 1e9, mHi: 0, prev: null, age: 0 });
+  Object.assign(CH, { e: 0, eP: 0.05, flux: 0, fluxP: 0.02, fluxS: undefined, bassW: 0.5, bassS: undefined, mel: 0.5, mLo: 1e9, mHi: 0, prev: null, age: 0, kicks: 0, kpb: undefined });
   S.recent = [];
   if (navigator.wakeLock) navigator.wakeLock.request('screen').catch(() => {});
 }
