@@ -1197,7 +1197,9 @@ function pickMove(sec) {
     // a half-time feel (a kick every other beat: R&B, hip-hop, slow jams) dances smaller and smoother
     // the song's own ups and downs move the target, but within the song's overall energy: a ballad's
     // big chorus is still a ballad (sways and arms), a dance-pop verse is still dance-pop
-    const scale = 0.35 + 0.65 * C.songE;
+    // slow songs (under ~95 BPM) dance smaller however loud they are
+    const slowSong = audio.bpm < 95 ? clamp((audio.bpm - 70) / 25, 0, 1) * 0.3 + 0.7 : 1;
+    const scale = (0.35 + 0.65 * C.songE) * slowSong;
     const tE = (S.sec === 'drop' ? 0.6 + 0.4 * C.I : 0.12 + 0.6 * C.I) * (C.half && C.bass < 0.6 ? 0.75 : 1) * scale;
     // half time is laid back, unless the bass is heavy (hip-hop bounces)
     const tS = (C.half && C.bass < 0.6 ? Math.min(C.busy, 0.35) : C.busy) * (0.4 + 0.6 * C.songE);
@@ -1619,6 +1621,9 @@ function onSourceStarted(title, meta) {
   // a new song: forget the last one's levels (they made every song's first 20 s read as "maximum")
   Object.assign(CH, { e: 0, eP: 0.05, flux: 0, fluxP: 0.02, fluxS: undefined, bassW: 0.5, bassS: undefined, mel: 0.5, mLo: 1e9, mHi: 0, prev: null, age: 0, kicks: 0, kpb: undefined, eS: undefined, lastT: 0 });
   S.recent = [];
+  // a held pose belongs to the song it was struck in: its end is in the old song's beats, and left
+  // set it froze the dancer for the first part of the next song
+  S.holdEnd = undefined; S.holdAmt = 0;
   if (navigator.wakeLock) navigator.wakeLock.request('screen').catch(() => {});
 }
 function setPlayIcon() { $('icoPause').style.display = audio.paused ? 'none' : ''; $('icoPlay').style.display = audio.paused ? '' : 'none'; $('playBtn').setAttribute('aria-label', audio.paused ? 'Play' : 'Pause'); }
