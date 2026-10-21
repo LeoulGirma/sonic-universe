@@ -5,11 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "npm run build:dancer && tsc -b && vite build",
     "build:single": "tsc -b && vite build --mode single",
     "preview": "vite preview",
     "typecheck": "tsc -b",
-    "test": "vitest run"
+    "test": "vitest run",
+    "build:dancer": "esbuild src/audio/songMap.worker.ts --bundle --format=iife --minify --target=es2020 --outfile=public/dancer/songmap-worker.js"
   },
   "dependencies": {
     "@react-three/fiber": "^8.18.0",
