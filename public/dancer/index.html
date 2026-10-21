@@ -654,9 +654,18 @@ async function songMapFor(file, buf) {
     return map;
   } catch (e) { console.warn('song map', e); return null; }
 }
-/* beat index whose phase is the bar's first beat: the most common phrase start among sections */
+/* which beat of four is the bar's first: the one the kicks land on hardest (section starts in the
+   map fall on whole phrases from beat 0, so they can't tell) */
 function downbeatOf(map) {
-  const c = [0, 0, 0, 0]; for (const s of map.sections || []) c[((s.startBeat % 4) + 4) % 4] += 1 + (s.energy || 0);
+  const B = map.beats, K = map.kicks, c = [0, 0, 0, 0];
+  if (K && K.t && K.t.length) {
+    let j = 0;
+    for (let i = 0; i < K.t.length; i++) {
+      const t = K.t[i]; while (j < B.length - 1 && B[j + 1] <= t) j++;
+      const near = Math.abs(t - B[j]) < Math.abs(t - (B[j + 1] ?? 1e9)) ? j : j + 1;
+      if (Math.abs(t - B[Math.min(near, B.length - 1)]) < 0.07) c[near % 4] += K.strength[i];
+    }
+  }
   return c.indexOf(Math.max(...c));
 }
 async function loadTrack(file) {
