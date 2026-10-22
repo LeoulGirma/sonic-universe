@@ -625,7 +625,14 @@ async function analyzeTrack(buf, grid) {
   let pw = 0; for (let f = 0; f < F; f++) pw += eF[f]; const loudDb = 10 * Math.log10(pw / (F * hop) + 1e-12);
   const songE = clamp(0.75 * clamp((loudDb + 15) / 6, 0, 1) + 0.25 * clamp((best - 85) / 50, 0, 1), 0, 1);
   const barLevel = Array.from(barE, e => Math.min(1.2, e / p95));
-  return { bpm: best, offset, sections, barDur, kpb, songE, loudDb, barLevel };
+  // rhythm feel from where the onsets fall inside each beat: swing (off-beat eighths land late, at
+  // 2/3 of the beat instead of 1/2) and syncopation (16th off-beats against the beats themselves)
+  const at = (t) => { const c = Math.round(t * fps); let m = 0; for (let f = Math.max(0, c - 2); f <= Math.min(F - 1, c + 2); f++) m = Math.max(m, on2[f]); return m; };
+  let eOn = 0, eHalf = 0, eTwo = 0, eSix = 0, nb = 0;
+  for (let t = offset; t + beat < dur - 0.1; t += beat) { eOn += at(t); eHalf += at(t + beat / 2); eTwo += at(t + beat * 2 / 3); eSix += at(t + beat / 4) + at(t + beat * 3 / 4); nb++; }
+  const swing = eHalf + eTwo > 0 ? eTwo / (eHalf + eTwo) : 0.5;
+  const sync = eOn > 0 ? eSix / (2 * eOn) : 0;
+  return { bpm: best, offset, sections, barDur, kpb, songE, loudDb, barLevel, swing, sync };
 }
 /* The main app's song map (its beat tracker, built in a worker): a real beat grid that follows the
    song, instead of one tempo guessed from autocorrelation (which read APT. and Beautiful Things at
@@ -687,6 +694,8 @@ async function loadTrack(file) {
     audio.name = file.name.replace(/\.[^.]+$/, '');
     hideToast();
     onSourceStarted(audio.name, `${Math.round(an.bpm)} BPM · beat grid locked`);
+    const sw = styleWeights(), styles = Object.keys(FAMILY_LABEL).filter(f => sw[f] > 0.5).sort((a, b) => sw[b] - sw[a]).slice(0, 2);
+    $('nowMeta').textContent = `${Math.round(an.bpm)} BPM · ${styles.map(f => FAMILY_LABEL[f]).join(' + ')} style`;
   } catch (err) {
     console.error(err);
     showToast('That file could not be decoded. Try an MP3, M4A or WAV.'); setTimeout(hideToast, 3500);
@@ -976,7 +985,7 @@ async function loadDancer() {
   }
   for (const k in acts) acts[k].base = acts[k].base || (k === 'mirror' ? 'samba' : k);
   moveFeatures(acts, B, hipsParentQ);
-  if (new URLSearchParams(location.search).has('debug')) window.__dancer = { D, S, audio, stepFit, plantFeet, cleanClip, CH, songCharacter, pickMove, AC, get legs() { return D.legs; } };
+  if (new URLSearchParams(location.search).has('debug')) window.__dancer = { D, S, audio, stepFit, plantFeet, cleanClip, CH, songCharacter, pickMove, AC, styleScores, styleWeights, get legs() { return D.legs; } };
   for (const k in acts) { acts[k].armK = armRoom(acts[k].action.getClip()); acts[k].action.play().setEffectiveWeight(k === 'idle' ? 1 : 0); }
   Object.assign(D, { ready: true, model, mesh, skel, B, hipsRestQ, body, refl, U, mixer, acts, cur: 'idle', wpos, vBand, nv, idx });
 }
@@ -1239,13 +1248,46 @@ function moveFeatures(acts) {
   }
   acts.idle.e = 0; acts.idle.sh = 0; acts.idle.bo = 0.3;
 }
+/* Dance styles. A real dancer commits to a style for a song instead of mixing salsa, Charleston
+   and Bollywood in one track. Each move belongs to a family; each song is scored against the
+   families from what the analysis can hear (tempo, a kick on every beat or not, overall energy,
+   syncopation, swing), and the top one or two families get nearly all the picks. Bollywood and folk
+   stay rare surprises, a little more likely at drops. */
+const FAMILY = {
+  latin: ['samba', '60_03', '60_05', '61_03', '55_02'], swing: ['103_03', '103_04', '103_08', '141_12'],
+  street: ['90_32', '113_04', '111_05'], party: ['143_35', '143_34', '120_05', '120_06', '120_07'],
+  bolly: ['94_01', '94_05', '94_10'], folk: ['90_30'], contemp: ['05_02', '05_11', '05_12', '49_09', '49_12', '55_01'],
+};
+const FAMILY_OF = {}; for (const f in FAMILY) for (const b of FAMILY[f]) FAMILY_OF[b] = f;
+const FAMILY_LABEL = { latin: 'Latin', swing: 'Swing & retro', street: 'Street', party: 'Party', bolly: 'Bollywood', folk: 'Folk', contemp: 'Contemporary' };
+function styleScores() {
+  const an = audio.mode === 'file' ? audio.analysis : null;
+  const bpm = audio.bpm || 110, E = an && an.songE !== undefined ? an.songE : 0.6, kpb = CH.kpb ?? (an ? an.kpb : 0.9) ?? 0.9;
+  const sync = an && an.sync !== undefined ? an.sync : 0.8, sw = an && an.swing !== undefined ? an.swing : 0.5;
+  const g = (x, m, w) => Math.exp(-0.5 * ((x - m) / w) ** 2);
+  return {
+    party: g(bpm, 124, 10) * clamp((kpb - 0.8) / 0.15, 0, 1) * (0.4 + 0.6 * E),
+    street: g(bpm, 98, 12) * (0.3 + 0.7 * E) * (0.5 + 0.5 * clamp((sync - 0.5) / 0.5, 0, 1)),
+    latin: g(bpm, 110, 18) * clamp((sync - 0.75) / 0.4, 0, 1) * 0.8,
+    swing: Math.max(clamp((sw - 0.55) / 0.12, 0, 1), clamp((bpm - 138) / 12, 0, 1)) * (0.4 + 0.6 * E),
+    contemp: Math.max(clamp((0.5 - E) / 0.35, 0, 1), clamp((92 - bpm) / 15, 0, 1)),
+    bolly: 0.12, folk: 0.08,
+  };
+}
+function styleWeights() {
+  const sc = styleScores(), top = Math.max(...Object.values(sc)), w = {};
+  for (const f in sc) w[f] = Math.exp((sc[f] - top) / 0.12);
+  if (S.sec === 'drop') { w.bolly = Math.max(w.bolly, 0.25); w.folk = Math.max(w.folk, 0.15); }
+  return w;
+}
 function pickMove(sec) {
   if (!D.ready) return null;
   const C = songCharacter(), cur = D.acts[D.cur];
   // like a dancer: small and fluid when the music is sparse, big and sharp when it is dense, bouncy
   // when it is bass-heavy; never the same move (or its mirror) twice in a row; moves that suit the
   // tempo are far more likely
-  const names = Object.keys(D.acts).filter(n => n !== D.cur && D.acts[n].base !== (cur && cur.base) && (n !== 'idle' || C.I < 0.25));
+  const STYLE_W = styleWeights();
+  const names = Object.keys(D.acts).filter(n => n !== D.cur && D.acts[n].base !== (cur && cur.base) && (n !== 'idle' || (C.I < 0.25 && (S.sec === 'calm' || S.sec === 'break'))));
   if (!names.length) return D.cur;
   const w = names.map(n => {
     const e = D.acts[n], l = Math.log(stepFit(e).r);
@@ -1264,8 +1306,17 @@ function pickMove(sec) {
     const seen = (S.recent || []).lastIndexOf(e.base), fresh = seen < 0 ? 1 : 0.12 + 0.2 * ((S.recent.length - 1 - seen) / 4);
     return (Math.exp(-d2 / 0.035) + 1e-4) * fresh;
   });
-  let x = Math.random() * w.reduce((a, b) => a + b, 0), pick = names[names.length - 1];
-  for (let i = 0; i < names.length; i++) { x -= w[i]; if (x <= 0) { pick = names[i]; break; } }
+  // the style first (commit to the song's family, sometimes its runner-up), then the move within it
+  // by size, feel and tempo; idle stays available in calm passages whatever the style
+  const famOf = n => n === 'idle' ? null : FAMILY_OF[D.acts[n].base];
+  const avail = {}; names.forEach(n => { const f = famOf(n); if (f) avail[f] = true; });
+  const fams = Object.keys(STYLE_W).filter(f => avail[f]);
+  let fx = Math.random() * fams.reduce((a, f) => a + STYLE_W[f], 0), fam = fams[0];
+  for (const f of fams) { fx -= STYLE_W[f]; if (fx <= 0) { fam = f; break; } }
+  const keep = names.map(n => famOf(n) === fam || (n === 'idle'));
+  const wk = w.map((v, i) => (keep[i] ? v : 0));
+  let x = Math.random() * wk.reduce((a, b) => a + b, 0), pick = names[names.length - 1];
+  for (let i = 0; i < names.length; i++) { x -= wk[i]; if (x <= 0) { pick = names[i]; break; } }
   // half time in sparse, laid-back passages: the same move at half the step rate
   const pe = D.acts[pick]; pe.slow = false;
   S.recent = [...(S.recent || []), pe.base].slice(-5);
