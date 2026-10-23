@@ -1275,9 +1275,13 @@ function styleScores() {
   };
 }
 function styleWeights() {
-  const sc = styleScores(), top = Math.max(...Object.values(sc)), w = {};
-  for (const f in sc) w[f] = Math.exp((sc[f] - top) / 0.12);
-  if (S.sec === 'drop') { w.bolly = Math.max(w.bolly, 0.25); w.folk = Math.max(w.folk, 0.15); }
+  // the song's main styles compete sharply (a weak top score must still win clearly); Bollywood and
+  // folk sit outside as small fixed surprises, a little larger at drops
+  const sc = styleScores(), main = ['party', 'street', 'latin', 'swing', 'contemp'], w = {};
+  const top = Math.max(...main.map(f => sc[f]));
+  for (const f of main) w[f] = Math.exp((sc[f] - top) / 0.05);
+  const drop = S.sec === 'drop';
+  w.bolly = drop ? 0.2 : 0.04; w.folk = drop ? 0.12 : 0.02;
   return w;
 }
 function pickMove(sec) {
@@ -1303,7 +1307,7 @@ function pickMove(sec) {
     const tS = (C.half && C.bass < 0.6 ? Math.min(C.busy, 0.35) : C.busy) * (0.4 + 0.6 * C.songE);
     const d2 = (e.e - tE) ** 2 + 0.5 * (e.sh - tS) ** 2 + 0.4 * (e.bo - C.bass) ** 2 + 2.5 * l * l;
     // a dancer doesn't keep coming back to the same step: moves seen in the last few picks are rare
-    const seen = (S.recent || []).lastIndexOf(e.base), fresh = seen < 0 ? 1 : 0.12 + 0.2 * ((S.recent.length - 1 - seen) / 4);
+    const seen = (S.recent || []).lastIndexOf(e.base), fresh = seen < 0 ? 1 : 0.05 + 0.15 * ((S.recent.length - 1 - seen) / 4);
     return (Math.exp(-d2 / 0.035) + 1e-4) * fresh;
   });
   // the style first (commit to the song's family, sometimes its runner-up), then the move within it
@@ -1731,6 +1735,8 @@ function onSourceStarted(title, meta) {
   // a held pose belongs to the song it was struck in: its end is in the old song's beats, and left
   // set it froze the dancer for the first part of the next song
   S.holdEnd = undefined; S.holdAmt = 0;
+  // and start in the new song's style rather than carrying the last song's move over
+  setTimeout(() => { if (D.ready && audio.mode !== 'none') nextMove(S.sec, 0.6); }, 400);
   if (navigator.wakeLock) navigator.wakeLock.request('screen').catch(() => {});
 }
 function setPlayIcon() { $('icoPause').style.display = audio.paused ? 'none' : ''; $('icoPlay').style.display = audio.paused ? '' : 'none'; $('playBtn').setAttribute('aria-label', audio.paused ? 'Play' : 'Pause'); }
