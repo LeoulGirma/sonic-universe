@@ -62,12 +62,34 @@ def solve(joints, vals, ft, fps=30):
 def build(path, name, label, t0=None, t1=None):
     joints, vals, ft = parse(path)
     names, W, P, rest, n = solve(joints, vals, ft)
+    return build_core(names, W, P, rest, n, name, label, MAP, CHILD, KEYS_CMU, t0, t1)
+
+KEYS_CMU = ['Hips', 'LowerBack', 'Spine1', 'Head', 'LeftArm', 'LeftForeArm', 'RightArm', 'RightForeArm', 'LeftUpLeg', 'LeftLeg', 'RightUpLeg', 'RightLeg']
+# Mixamo clips use the dancer's own skeleton names
+MAP_MIX = {b: b for b in MAP}
+CHILD_MIX = {'Spine': 'Spine1', 'Spine1': 'Spine2', 'Spine2': 'Neck', 'Neck': 'Head', 'LeftShoulder': 'LeftArm', 'LeftArm': 'LeftForeArm', 'LeftForeArm': 'LeftHand',
+             'RightShoulder': 'RightArm', 'RightArm': 'RightForeArm', 'RightForeArm': 'RightHand', 'LeftUpLeg': 'LeftLeg', 'LeftLeg': 'LeftFoot', 'LeftFoot': 'LeftToeBase',
+             'RightUpLeg': 'RightLeg', 'RightLeg': 'RightFoot', 'RightFoot': 'RightToeBase'}
+KEYS_MIX = ['Hips', 'Spine', 'Spine2', 'Head', 'LeftArm', 'LeftForeArm', 'RightArm', 'RightForeArm', 'LeftUpLeg', 'LeftLeg', 'RightUpLeg', 'RightLeg']
+
+def build_mixamo(sampled, name, label):
+    """sampled: {joints: [names], rest: {name: [x,y,z]}, restQ: {name: quat}, frames: n, q: {name: [n*4]}, p: {name: [n*3]}} from
+    scripts/mixamo-sample.mjs (world space). Rotations become deltas from the clip's own rest pose."""
+    names = sampled['joints']; n = sampled['frames']
+    W = [None] * len(names); P = [None] * len(names); rest = [None] * len(names)
+    for k, nm in enumerate(names):
+        q = np.array(sampled['q'][nm]).reshape(n, 4)
+        W[k] = R.from_quat(q) * R.from_quat(sampled['restQ'][nm]).inv()
+        P[k] = np.array(sampled['p'][nm]).reshape(n, 3)
+        rest[k] = np.array(sampled['rest'][nm])
+    return build_core(names, W, P, rest, n, name, label, MAP_MIX, CHILD_MIX, KEYS_MIX)
+
+def build_core(names, W, P, rest, n, name, label, MAP, CHILD, keys, t0=None, t1=None):
     ix = {nm: k for k, nm in enumerate(names) if nm}
     a = ix['LeftUpLeg']; legLen = np.linalg.norm(rest[ix['LeftLeg']] - rest[a]) + np.linalg.norm(rest[ix['LeftFoot']] - rest[ix['LeftLeg']])
     hips = P[ix['Hips']]
     s0 = int((t0 or 0) * 30); s1 = int(t1 * 30) if t1 else n
     # per-frame pose vector for loop matching: world quats of the main bones
-    keys = ['Hips', 'LowerBack', 'Spine1', 'Head', 'LeftArm', 'LeftForeArm', 'RightArm', 'RightForeArm', 'LeftUpLeg', 'LeftLeg', 'RightUpLeg', 'RightLeg']
     Q = np.stack([W[ix[k]].as_quat() for k in keys], 1)  # n x K x 4
     def pdist(i, j):
         d = np.abs(np.einsum('kc,kc->k', Q[i], Q[j])).clip(0, 1); return float(np.sum(2 * np.arccos(d)))
@@ -127,3 +149,18 @@ if __name__ == '__main__':
         moves = [m for m in moves if m['name'] != mv['name']] + [mv]
         print(c['id'], c['label'], 'frames', mv['frames'], 'seam', mv['seamScore'])
     json.dump(moves, open(outp, 'w'), separators=(',', ':'))
+
+def add_mixamo(json_dir, moves_path, specs):
+    """specs: [{file, name, label, pool, t0?, t1?}] -> appended to moves.json (replacing same names)."""
+    moves = json.load(open(moves_path))
+    for c in specs:
+        sampled = json.load(open(os.path.join(json_dir, c['file'])))
+        names = sampled['joints']; n = sampled['frames']
+        W = [R.from_quat(np.array(sampled['q'][nm]).reshape(n, 4)) * R.from_quat(sampled['restQ'][nm]).inv() for nm in names]
+        P = [np.array(sampled['p'][nm]).reshape(n, 3) for nm in names]
+        rest = [np.array(sampled['rest'][nm]) for nm in names]
+        mv = build_core(names, W, P, rest, n, c['name'], c['label'], MAP_MIX, CHILD_MIX, KEYS_MIX, c.get('t0'), c.get('t1'))
+        mv['pool'] = c.get('pool', 'groove'); mv['source'] = 'mixamo'
+        moves = [m for m in moves if m['name'] != mv['name']] + [mv]
+        print(c['name'], c['label'], 'frames', mv['frames'], 'seam', mv['seamScore'])
+    json.dump(moves, open(moves_path, 'w'), separators=(',', ':'))

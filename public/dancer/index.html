@@ -1268,7 +1268,10 @@ const FAMILY = {
   bolly: ['94_01', '94_05', '94_10'], folk: ['90_30'], contemp: ['05_02', '05_11', '05_12', '49_09', '49_12', '55_01'],
 };
 const FAMILY_OF = {}; for (const f in FAMILY) for (const b of FAMILY[f]) FAMILY_OF[b] = f;
-const FAMILY_LABEL = { latin: 'Latin', swing: 'Swing & retro', street: 'Street', party: 'Party', bolly: 'Bollywood', folk: 'Folk', contemp: 'Contemporary' };
+// Mixamo moves (mx_*) by their name
+const MX_FAMILY = [[/^mx_(hip_hop|wave_hip_hop)/, 'street'], [/^mx_(house|shuffling|silly)/, 'party'], [/^mx_(salsa|samba)/, 'latin'], [/^mx_swing/, 'swing'], [/^mx_belly/, 'bolly']];
+function familyOf(base) { if (FAMILY_OF[base]) return FAMILY_OF[base]; for (const [re, f] of MX_FAMILY) if (re.test(base)) return (FAMILY_OF[base] = f); return null; }
+const FAMILY_LABEL = { latin: 'Latin', swing: 'Swing & retro', street: 'Street', party: 'Party', bolly: 'Bollywood & world', folk: 'Folk', contemp: 'Contemporary' };
 function styleScores() {
   const an = audio.mode === 'file' ? audio.analysis : null;
   const bpm = audio.bpm || 110, E = an && an.songE !== undefined ? an.songE : 0.6, kpb = CH.kpb ?? (an ? an.kpb : 0.9) ?? 0.9;
@@ -1321,7 +1324,7 @@ function pickMove(sec) {
   });
   // the style first (commit to the song's family, sometimes its runner-up), then the move within it
   // by size, feel and tempo; idle stays available in calm passages whatever the style
-  const famOf = n => n === 'idle' ? null : FAMILY_OF[D.acts[n].base];
+  const famOf = n => n === 'idle' ? null : familyOf(D.acts[n].base);
   const avail = {}; names.forEach(n => { const f = famOf(n); if (f) avail[f] = true; });
   const fams = Object.keys(STYLE_W).filter(f => avail[f]);
   let fx = Math.random() * fams.reduce((a, f) => a + STYLE_W[f], 0), fam = fams[0];
