@@ -1063,6 +1063,15 @@ function retargetFromDeltas(mv, skel, parentQ) {
     v.set(mv.hips[fi * 3], mv.hips[fi * 3 + 1], mv.hips[fi * 3 + 2]); if (mv.hipUnit === 'leg') v.multiplyScalar(legLen); v.add(hipsRest).sub(parentPos).applyQuaternion(pinv).divideScalar(ps);
     v.toArray(hp, f * 3);
   }
+  // remove net horizontal travel over the loop (older moves kept it): otherwise the whole body slid
+  // back ~0.4 leg lengths in the loop's last 1/30 s, a visible snap every loop
+  if (mv.hipUnit !== 'leg' && F > 2) {
+    // the last key repeats frame 0; spread the gap between frame F-1 and it across the whole loop
+    // (hp is in the hips' parent space, whose axes are rotated: close the gap on all three)
+    const g = [0, 1, 2].map(c => hp[(F - 1) * 3 + c] - hp[c] + (hp[3 + c] - hp[c]));
+    for (let f = 0; f < F; f++) { const u = f / F; for (let c = 0; c < 3; c++) hp[f * 3 + c] -= g[c] * u; }
+    hp[F * 3] = hp[0]; hp[F * 3 + 1] = hp[1]; hp[F * 3 + 2] = hp[2]; // the closing key is frame 0 again
+  }
   const tracks = bones.map(b => new THREE.QuaternionKeyframeTrack(b.name + '.quaternion', times, out.get(b.name)));
   tracks.push(new THREE.VectorKeyframeTrack('mixamorigHips.position', times, hp));
   return new THREE.AnimationClip(mv.name, F / mv.fps, tracks);
@@ -1568,12 +1577,17 @@ function plantFeet(dt) {
     const h = Math.min(_A.y - L.ankleY, _T.y - L.toeY);
     const v = L.has ? Math.hypot(_A.x - L.prev.x, _A.z - L.prev.z) / dt : 0;
     L.prev.copy(_A); L.has = true;
-    if (!L.planted && h < 0.05 * Lg && v < 0.9 * Lg) { L.planted = true; L.lock.set(_A.x, Math.max(_A.y, L.ankleY), _A.z); }
+    // planting again while still letting go: pin where the foot actually is, not where the clip has
+    // it (re-pinning to the clip's spot made the foot jump 20-36 leg lengths/s for a frame)
+    if (!L.planted && h < 0.05 * Lg && v < 0.9 * Lg) { L.planted = true; if (L.w > 0 && L.tgt) L.lock.copy(L.tgt); else L.lock.set(_A.x, Math.max(_A.y, L.ankleY), _A.z); }
     else if (L.planted && (h > 0.11 * Lg || Math.hypot(_A.x - L.lock.x, _A.z - L.lock.z) > 0.32 * Lg)) L.planted = false;
-    L.w = L.planted ? Math.min(1, L.w + dt / 0.06) : Math.max(0, L.w - dt / 0.14);
+    // soft pin: the spot follows the clip's foot slowly while planted, so the release never snaps
+    if (L.planted) { const k = 1 - Math.exp(-dt * 4); L.lock.x += (_A.x - L.lock.x) * k; L.lock.z += (_A.z - L.lock.z) * k; }
+    L.w = L.planted ? Math.min(1, L.w + dt / 0.06) : Math.max(0, L.w - dt / 0.3);
     // target: the pinned spot while planted (blended in and out); never below the floor
     _T.copy(_A); if (L.w > 0) _T.lerp(L.lock, L.w);
     if (_T.y < L.ankleY) _T.y = L.ankleY;
+    (L.tgt || (L.tgt = new THREE.Vector3())).copy(_T);
     if (_T.distanceToSquared(_A) < 1e-8) continue;
     if (L.planted) { L.slide += Math.hypot(_A.x - L.lock.x, _A.z - L.lock.z); L.n++; }
     solveLeg(L, _T);
@@ -1587,8 +1601,11 @@ function solveLeg(L, target) {
   const cur = _u.subVectors(_H, _K).normalize().angleTo(_w2.subVectors(_A, _K).normalize());
   const want = Math.acos(clamp((a * a + b * b - d * d) / (2 * a * b), -1, 1));
   _ax.crossVectors(_u.subVectors(_K, _H), _w2.subVectors(_A, _K));
-  if (_ax.lengthSq() < 1e-10) _ax.set(1, 0, 0).applyQuaternion(D.B.hips.getWorldQuaternion(_qa)); // straight leg: bend forward
-  _ax.normalize();
+  // a nearly straight leg has no reliable bend plane: keep the last one, or the knee can flip
+  // backwards for a frame (seen as 20+ leg-lengths/s foot jumps)
+  if (!L.ax) L.ax = new THREE.Vector3(1, 0, 0).applyQuaternion(D.B.hips.getWorldQuaternion(_qa));
+  if (_ax.lengthSq() > 1e-4 * a * a * b * b) { _ax.normalize(); if (_ax.dot(L.ax) < 0 && cur > 2.8) _ax.negate(); L.ax.lerp(_ax, 0.5).normalize(); }
+  _ax.copy(L.ax);
   _qa.setFromAxisAngle(_ax, cur - want); rotWorldQ(L.knee, _qa);
   L.up.updateMatrixWorld(true);
   // 2. swing the thigh so the ankle lands on the target
