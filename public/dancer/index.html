@@ -1520,7 +1520,12 @@ const AC = { pat: null, phrase: -1, wL: new THREE.Vector3(), wR: new THREE.Vecto
 const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3(), _L = new THREE.Vector3(), _U = new THREE.Vector3(), _F = new THREE.Vector3(), _qq = new THREE.Quaternion(), _qi = new THREE.Quaternion();
 function aimBone(bone, child, target, w) {
   bone.getWorldPosition(_a); child.getWorldPosition(_b); _c.subVectors(_b, _a).normalize();
-  _qq.setFromUnitVectors(_c, target); _qi.identity().slerp(_qq, w); rotWorldQ(bone, _qi); bone.updateMatrixWorld(true);
+  _qq.setFromUnitVectors(_c, target); _qi.identity().slerp(_qq, w);
+  // the added rotation may change by at most ~9 rad/s: a target passing behind the arm (a 180-degree
+  // aim) otherwise flipped it in one frame (hands seen at 37 leg lengths/s)
+  const prev = bone.userData.aimQ || (bone.userData.aimQ = _qi.clone()), step = prev.angleTo(_qi);
+  if (step > 0.15) prev.slerp(_qi, 0.15 / step); else prev.copy(_qi);
+  rotWorldQ(bone, prev); bone.updateMatrixWorld(true);
 }
 function armChoreo(bp) {
   if (!D.fore) { const g = n => D.model.getObjectByName('mixamorig' + n); D.fore = { l: g('LeftForeArm'), r: g('RightForeArm') }; }
