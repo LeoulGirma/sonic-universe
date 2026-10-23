@@ -694,8 +694,8 @@ async function loadTrack(file) {
     audio.name = file.name.replace(/\.[^.]+$/, '');
     hideToast();
     onSourceStarted(audio.name, `${Math.round(an.bpm)} BPM · beat grid locked`);
-    const sw = styleWeights(), styles = Object.keys(FAMILY_LABEL).filter(f => sw[f] > 0.5).sort((a, b) => sw[b] - sw[a]).slice(0, 2);
-    $('nowMeta').textContent = `${Math.round(an.bpm)} BPM · ${styles.map(f => FAMILY_LABEL[f]).join(' + ')} style`;
+    fileMeta();
+    if (G.state === 'ready') genrePrescan();
   } catch (err) {
     console.error(err);
     showToast('That file could not be decoded. Try an MP3, M4A or WAV.'); setTimeout(hideToast, 3500);
@@ -758,7 +758,8 @@ function estimateTempo() {
     audio.grid0 += clamp(e * 0.35, -0.08, 0.08) * audio.beat;
   }
   $('bpmv').textContent = Math.round(audio.bpm);
-  $('nowMeta').textContent = `${audio.mic && audio.mic.kind === 'sys' ? 'This computer' : 'Listening'} · ${Math.round(audio.bpm)} BPM`;
+  const gt = genreText();
+  $('nowMeta').textContent = `${audio.mic && audio.mic.kind === 'sys' ? 'This computer' : 'Listening'} · ${Math.round(audio.bpm)} BPM${gt ? ' · ' + styleText() : ''}`;
 }
 function micSection() {
   const ratio = audio.micE / Math.max(audio.micPk, 1e-4), sinceKick = audio.ctx.currentTime - (audio.kicks[audio.kicks.length - 1] ?? -99);
@@ -1272,6 +1273,127 @@ const FAMILY_OF = {}; for (const f in FAMILY) for (const b of FAMILY[f]) FAMILY_
 const MX_FAMILY = [[/^mx_(hip_hop|wave_hip_hop)/, 'street'], [/^mx_(house|shuffling|silly)/, 'party'], [/^mx_(salsa|samba)/, 'latin'], [/^mx_swing/, 'swing'], [/^mx_belly/, 'bolly']];
 function familyOf(base) { if (FAMILY_OF[base]) return FAMILY_OF[base]; for (const [re, f] of MX_FAMILY) if (re.test(base)) return (FAMILY_OF[base] = f); return null; }
 const FAMILY_LABEL = { latin: 'Latin', swing: 'Swing & retro', street: 'Street', party: 'Party', bolly: 'Bollywood & world', folk: 'Folk', contemp: 'Contemporary' };
+/* ---------- genre: YAMNet (AudioSet's 521 sound classes) in the browser through MediaPipe ---------- */
+// what kind of music it is chooses the dance style: the model hears the genre (hip hop, salsa, disco…)
+// in the sound itself, the way a person does; the tempo and kick reading stays as the fallback when the
+// model isn't sure. Files are sampled across the whole song up front; live audio is heard in 2 s chunks
+// and averaged over ~15 s, so a style only changes when a different genre holds for a while.
+const GENRE_URL = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-audio@${'0.10.14'}`;
+const YAMNET_URL = 'https://storage.googleapis.com/mediapipe-models/audio_classifier/yamnet/float32/1/yamnet.tflite';
+const GENRE_MAP = [
+  [/^(hip hop|beatboxing|grime|trap)/i, { street: 1 }],
+  [/^rhythm and blues/i, { street: 0.6, contemp: 0.4 }],
+  [/^soul music/i, { contemp: 0.6, street: 0.4 }],
+  [/^funk/i, { street: 0.5, party: 0.5 }],
+  [/^(dubstep|drum and bass)/i, { party: 0.6, street: 0.4 }],
+  [/^reggae/i, { latin: 0.5, street: 0.5 }],
+  [/^pop music/i, { party: 0.35, contemp: 0.35, street: 0.3 }], // pop is everything: it names, it doesn't choose
+  [/^(disco|house music|techno|electronic|electronica|trance|dance music)/i, { party: 1 }],
+  [/latin america|^(salsa|flamenco|cumbia|reggaeton|bossa)/i, { latin: 1 }],
+  [/^(swing music|jazz|rock and roll|ska|blues)/i, { swing: 1 }],
+  [/^(rock music|punk rock)/i, { swing: 0.6, party: 0.4 }],
+  [/bollywood|middle eastern|carnatic/i, { bolly: 1 }],
+  [/^music of africa|^afrobeat/i, { party: 0.5, street: 0.3, bolly: 0.2 }], // afro house and afrobeats are club music
+  [/^music of asia/i, { bolly: 0.4, party: 0.6 }],
+  [/^(folk music|traditional music)/i, { folk: 0.5, contemp: 0.5 }],
+  [/^(country|bluegrass)/i, { swing: 0.6, folk: 0.4 }],
+  [/^(classical music|opera|ambient music|new-age|sad music|tender music|lullaby|a capella|soundtrack)/i, { contemp: 1 }],
+];
+const GENRE_SHORT = { 'Rhythm and blues': 'R&B', 'Music of Latin America': 'Latin American', 'Music of Bollywood': 'Bollywood', 'Music of Africa': 'African', 'Music of Asia': 'Asian', 'Middle Eastern music': 'Middle Eastern', 'Electronic dance music': 'EDM', 'Rock and roll': 'Rock & roll' };
+const G = { clf: null, state: 'idle', fam: {}, cls: {}, n: 0, gen: 0, label: '', tap: null };
+window.__genre = G;
+async function genreLoad() {
+  if (G.state !== 'idle') return; G.state = 'loading';
+  try {
+    const mod = await import(`${GENRE_URL}/audio_bundle.mjs`);
+    const files = await mod.FilesetResolver.forAudioTasks(`${GENRE_URL}/wasm`);
+    G.clf = await mod.AudioClassifier.createFromOptions(files, { baseOptions: { modelAssetPath: YAMNET_URL }, maxResults: 80, scoreThreshold: 0.005 });
+    G.state = 'ready';
+    if (audio.mode === 'file') genrePrescan();
+    genreTap();
+  } catch (err) { G.state = 'failed'; console.warn('genre model unavailable, styles come from the rhythm alone', err); }
+}
+function genreReset() { G.gen++; G.fam = {}; G.cls = {}; G.n = 0; G.label = ''; }
+// fold one chunk's results in: a running mean for a file, a ~15 s average for live sound
+function genreAdd(results, live) {
+  for (const r of results || []) {
+    const cats = (r.classifications && r.classifications[0] && r.classifications[0].categories) || [];
+    const nm = c => c.categoryName || c.displayName || '';
+    const music = cats.find(c => /^music$/i.test(nm(c)));
+    if (!music || music.score < 0.2) continue; // speech, silence, noise: not a genre vote
+    const fam = {}, cls = {};
+    for (const c of cats) for (const [re, w] of GENRE_MAP) if (re.test(nm(c))) { cls[nm(c)] = c.score; for (const f in w) fam[f] = (fam[f] || 0) + c.score * w[f]; break; }
+    const a = Math.max(1 / (G.n + 1), live ? 0.07 : 0);
+    for (const f of Object.keys(FAMILY_LABEL)) G.fam[f] = (G.fam[f] || 0) * (1 - a) + (fam[f] || 0) * a;
+    for (const k of new Set([...Object.keys(G.cls), ...Object.keys(cls)])) G.cls[k] = (G.cls[k] || 0) * (1 - a) + (cls[k] || 0) * a;
+    G.n++;
+  }
+  // the name shown: the strongest genre heard within the leading family, changing only when another
+  // is clearly stronger
+  const tf = Object.keys(G.fam).sort((x, y) => G.fam[y] - G.fam[x])[0];
+  const sc = k => { const m = GENRE_MAP.find(([re]) => re.test(k)); return (G.cls[k] || 0) * ((m && m[1][tf]) || 0); };
+  let best = '', bs = 0; for (const k in G.cls) { const v = sc(k); if (v > bs) { bs = v; best = k; } }
+  if (best && (!G.label || bs > 1.25 * sc(G.label))) G.label = best;
+}
+// family scores 0..1 (relative to the strongest) and how far to trust them
+function genreChoice() {
+  // trusted when one family is both clearly heard and clearly ahead of the next
+  const fs = Object.values(G.fam).sort((a, b) => b - a), top = fs[0] || 0, second = fs[1] || 0;
+  const live = audio.mode === 'mic';
+  const conf = top > 0 ? clamp((top - 0.015) / 0.045, 0, 1) * clamp((top - second) / (0.5 * top), 0, 1) * clamp((G.n - (live ? 4 : 0)) / (live ? 6 : 4), 0, 1) : 0;
+  const gN = {}; for (const f in G.fam) gN[f] = top > 0 ? G.fam[f] / top : 0;
+  return { gN, conf };
+}
+function genreText() {
+  if (genreChoice().conf < 0.5 || !G.label) return '';
+  return GENRE_SHORT[G.label] || G.label.replace(/ music$/i, '');
+}
+function styleText() {
+  const sw = styleWeights(), styles = Object.keys(FAMILY_LABEL).filter(f => sw[f] > 0.5).sort((a, b) => sw[b] - sw[a]).slice(0, 2);
+  const g = genreText();
+  return `${g ? g + ' · ' : ''}${styles.map(f => FAMILY_LABEL[f]).join(' + ')} style`;
+}
+function fileMeta() { if (audio.mode === 'file' && audio.analysis) $('nowMeta').textContent = `${Math.round(audio.analysis.bpm)} BPM · ${styleText()}`; }
+async function genrePrescan() {
+  const buf = audio.buffer, gen = G.gen; if (!buf || !G.clf) return;
+  const sr = buf.sampleRate, L = Math.round(sr * 2), K = 14;
+  if (buf.length < L * 2) return;
+  const chs = []; for (let c = 0; c < buf.numberOfChannels; c++) chs.push(buf.getChannelData(c));
+  for (let k = 0; k < K; k++) {
+    if (gen !== G.gen || audio.buffer !== buf) return;
+    const s0 = Math.floor((0.06 + 0.88 * k / (K - 1)) * (buf.length - L)), x = new Float32Array(L);
+    for (const ch of chs) for (let i = 0; i < L; i++) x[i] += ch[s0 + i] / chs.length;
+    try { genreAdd(G.clf.classify(x, sr), false); } catch (err) { console.warn(err); return; }
+    await new Promise(r => setTimeout(r, 25));
+  }
+  fileMeta();
+  // the first move was picked from the rhythm alone; if the genre says otherwise, switch now
+  const sw = styleWeights(), top = Object.keys(sw).sort((a, b) => sw[b] - sw[a])[0], cur = D.acts && D.acts[D.cur];
+  if (D.ready && cur && familyOf(cur.base) !== top) nextMove(S.sec, 0.6);
+}
+// live sound: a tap on the analyser hands 2 s of mono audio to the model at a time
+async function genreTap() {
+  if (G.tap || !audio.ctx || !audio.ctx.audioWorklet) return;
+  const ctx = audio.ctx, N = Math.round(ctx.sampleRate * 2);
+  G.tap = 'starting';
+  const code = `class T extends AudioWorkletProcessor{constructor(){super();this.b=new Float32Array(${N});this.i=0}
+process(inp){const c=inp[0];if(c&&c.length&&c[0]){const n=c[0].length;for(let k=0;k<n;k++){let s=0;for(let h=0;h<c.length;h++)s+=c[h][k];this.b[this.i++]=s/c.length;
+if(this.i===this.b.length){this.port.postMessage(this.b,[this.b.buffer]);this.b=new Float32Array(${N});this.i=0}}}return true}}registerProcessor('genre-tap',T)`;
+  try {
+    await ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([code], { type: 'application/javascript' })));
+    const node = new AudioWorkletNode(ctx, 'genre-tap', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
+    const mute = ctx.createGain(); mute.gain.value = 0;
+    audio.analyser.connect(node); node.connect(mute); mute.connect(ctx.destination);
+    node.port.onmessage = e => {
+      if (audio.mode !== 'mic' || !G.clf || audio.paused) return;
+      const x = e.data; let s = 0; for (let i = 0; i < x.length; i += 8) s += x[i] * x[i];
+      if (Math.sqrt(s / (x.length / 8)) < 0.004) return; // silence
+      const gen = G.gen;
+      try { const r = G.clf.classify(x, ctx.sampleRate); if (gen === G.gen) genreAdd(r, true); } catch (err) { console.warn(err); }
+    };
+    G.tap = node;
+  } catch (err) { G.tap = null; console.warn('no live genre tap', err); }
+}
 function styleScores() {
   const an = audio.mode === 'file' ? audio.analysis : null;
   const bpm = audio.bpm || 110, E = an && an.songE !== undefined ? an.songE : 0.6, kpb = CH.kpb ?? (an ? an.kpb : 0.9) ?? 0.9;
@@ -1289,11 +1411,15 @@ function styleScores() {
 function styleWeights() {
   // the song's main styles compete sharply (a weak top score must still win clearly); Bollywood and
   // folk sit outside as small fixed surprises, a little larger at drops
-  const sc = styleScores(), main = ['party', 'street', 'latin', 'swing', 'contemp'], w = {};
-  const top = Math.max(...main.map(f => sc[f]));
-  for (const f of main) w[f] = Math.exp((sc[f] - top) / 0.05);
+  // the genre the model hears leads (up to 70 %) once it is sure; Bollywood and folk only compete
+  // when the model hears that kind of music
+  const sc = styleScores(), main = ['party', 'street', 'latin', 'swing', 'contemp'], w = {}, s = {};
+  const g = genreChoice(), a = 0.7 * g.conf;
+  for (const f of Object.keys(FAMILY_LABEL)) s[f] = (main.includes(f) ? sc[f] : 0) * (1 - a) + (g.gN[f] || 0) * a;
+  const top = Math.max(...Object.values(s));
+  for (const f in s) w[f] = Math.exp((s[f] - top) / 0.05);
   const drop = S.sec === 'drop';
-  w.bolly = drop ? 0.2 : 0.04; w.folk = drop ? 0.12 : 0.02;
+  w.bolly = Math.max(w.bolly, drop ? 0.2 : 0.04); w.folk = Math.max(w.folk, drop ? 0.12 : 0.02);
   return w;
 }
 function pickMove(sec) {
@@ -1757,6 +1883,7 @@ function onSourceStarted(title, meta) {
   // a new song: forget the last one's levels (they made every song's first 20 s read as "maximum")
   Object.assign(CH, { e: 0, eP: 0.05, flux: 0, fluxP: 0.02, fluxS: undefined, bassW: 0.5, bassS: undefined, mel: 0.5, mLo: 1e9, mHi: 0, prev: null, age: 0, kicks: 0, kpb: undefined, eS: undefined, lastT: 0 });
   S.recent = [];
+  genreReset(); if (audio.mode !== 'demo') genreLoad();
   // a held pose belongs to the song it was struck in: its end is in the old song's beats, and left
   // set it froze the dancer for the first part of the next song
   S.holdEnd = undefined; S.holdAmt = 0;
