@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "typecheck": "tsc -b",
     "test": "vitest run",
-    "build:dancer": "esbuild src/audio/songMap.worker.ts --bundle --format=iife --minify --target=es2020 --outfile=public/dancer/songmap-worker.js"
+    "build:dancer": "esbuild src/audio/songMap.worker.ts --bundle --format=iife --minify --target=es2020 --outfile=public/dancer/songmap-worker.js",
+    "e2e": "playwright test"
   },
   "dependencies": {
     "@react-three/fiber": "^8.18.0",
@@ -22,6 +23,7 @@
     "zustand": "^5.0.15"
   },
   "devDependencies": {
+    "@playwright/test": "^1.56.0",
     "@types/react": "^18.3.31",
     "@types/react-dom": "^18.3.7",
     "@types/three": "^0.169.0",

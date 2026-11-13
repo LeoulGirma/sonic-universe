@@ -703,6 +703,33 @@ async function loadTrack(file) {
 }
 /* live mic: tempo and phase are estimated from detected kicks */
 async function startMic() { return startLive('mic'); }
+/* live kicks are found on the audio thread: a low-passed energy envelope in 256-sample hops (~6 ms), so the
+   kick times the tempo tracker sees don't depend on how fast the page is rendering (a busy phone, a stream) */
+async function kickTap() {
+  if (audio.kickNode !== undefined) return audio.kickNode;
+  const ctx = audio.ctx;
+  if (!ctx.audioWorklet) return (audio.kickNode = null);
+  const code = `class K extends AudioWorkletProcessor{constructor(){super();const a=Math.exp(-2*Math.PI*150/sampleRate);this.a=a;this.y1=0;this.y2=0;this.acc=0;this.n=0;this.H=256;this.prev=1e-4;this.avg=1e-4;this.pk=1e-3;this.last=-9;this.rise=0}
+process(inp){const c=inp[0];if(!c||!c.length||!c[0])return true;const L=c[0].length,a=this.a,ah=Math.exp(-this.H/sampleRate/0.45);
+for(let k=0;k<L;k++){let x=0;for(let h=0;h<c.length;h++)x+=c[h][k];x/=c.length;this.y1=a*this.y1+(1-a)*x;this.y2=a*this.y2+(1-a)*this.y1;this.acc+=this.y2*this.y2;
+if(++this.n===this.H){const e=Math.sqrt(this.acc/this.H),t=currentTime+(k+1)/sampleRate,d=Math.log(e+1e-5)-Math.log(this.prev+1e-5);this.pk=Math.max(e,this.pk*0.9995);
+if(d>0.18&&e>this.avg*1.3&&e>this.pk*0.12&&t-this.last>0.24){this.last=t;this.port.postMessage({t,v:Math.min(1,e/this.pk)})}
+this.avg=ah*this.avg+(1-ah)*e;this.prev=e;this.acc=0;this.n=0}}return true}}registerProcessor('kick-onset',K)`;
+  try {
+    await ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([code], { type: 'application/javascript' })));
+    const node = new AudioWorkletNode(ctx, 'kick-onset', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
+    const mute = ctx.createGain(); mute.gain.value = 0; node.connect(mute); mute.connect(ctx.destination);
+    audio.kickQ = [];
+    node.port.onmessage = e => {
+      if (audio.mode !== 'mic' || audio.paused) return;
+      const { t, v } = e.data;
+      audio.kicks.push(t); audio.kickTotal = (audio.kickTotal || 0) + 1;
+      while (audio.kicks.length && t - audio.kicks[0] > 12) audio.kicks.shift();
+      audio.kickQ.push(Math.max(0.4, v));
+    };
+    return (audio.kickNode = node);
+  } catch (err) { console.warn('no audio-thread kick detector, using the frame-rate one', err); return (audio.kickNode = null); }
+}
 /* live input: the room through the mic, or (desktop Chrome / Edge) exactly what this computer
    plays, shared through the screen picker with system audio on; the video track is dropped */
 async function startLive(kind) {
@@ -718,6 +745,7 @@ async function startLive(kind) {
   stopAll();
   const node = audio.ctx.createMediaStreamSource(stream);
   node.connect(audio.analyser);
+  const kn = await kickTap(); if (kn) { audio.kickQ.length = 0; node.connect(kn); }
   audio.mic = { stream, node, kind }; audio.mode = 'mic'; audio.kicks = []; audio.locked = false; audio.bpm = 120; audio.beat = 0.5;
   audio.micE = 0; audio.micPk = 0.02; audio.lastEst = 0; S.live = null; S.build = 0;
   stream.getAudioTracks()[0].addEventListener('ended', () => { if (audio.mic && audio.mic.stream === stream) { stopAll(); $('nowTitle').textContent = 'Stopped'; $('nowMeta').textContent = 'Pick a source'; } });
@@ -822,7 +850,8 @@ function readBands(dt, now) {
     audio.micPk = Math.max(audio.micE, audio.micPk * Math.exp(-dt / 90), 0.01);
   }
   if (audio.mode === 'file' || audio.mode === 'mic') {
-    if (raw[0] - bands.avgB > 0.06 && raw[0] > bands.avgB * 1.18 && now - bands.lastKick > 0.24) {
+    if (audio.mode === 'mic' && audio.kickNode) { while (audio.kickQ.length) { bands.lastKick = now; out.push({ type: 'kick', v: audio.kickQ.shift() }); } }
+    else if (raw[0] - bands.avgB > 0.06 && raw[0] > bands.avgB * 1.18 && now - bands.lastKick > 0.24) {
       bands.lastKick = now; out.push({ type: 'kick', v: clamp(nb[0], 0.4, 1) });
       if (audio.mode === 'mic') { const ct = audio.ctx.currentTime; audio.kicks.push(ct); audio.kickTotal = (audio.kickTotal || 0) + 1; while (audio.kicks.length && ct - audio.kicks[0] > 12) audio.kicks.shift(); }
     }

@@ -4,3 +4,6 @@ dist-single
 sonic-universe.html
 *.log
 *.tsbuildinfo
+e2e/.out
+test-results
+playwright-report

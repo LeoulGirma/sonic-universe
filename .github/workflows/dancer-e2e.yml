@@ -1,0 +1,33 @@
+name: Dancer end-to-end tests
+
+on:
+  push:
+    branches: [main]
+    paths: ['public/dancer/**', 'e2e/**', 'playwright.config.mjs', 'package.json', 'package-lock.json', '.github/workflows/dancer-e2e.yml']
+  pull_request:
+    paths: ['public/dancer/**', 'e2e/**', 'playwright.config.mjs']
+  workflow_dispatch:
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run e2e
+        env:
+          CI: 'true'
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            playwright-report
+            test-results
+          retention-days: 7
