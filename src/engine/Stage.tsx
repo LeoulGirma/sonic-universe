@@ -8,11 +8,13 @@ import { CameraRig } from './CameraRig';
 import { PointerTracker } from './PointerTracker';
 import { PerfMonitor } from './PerfMonitor';
 import { PostFX } from './PostFX';
+import { AudienceLayer } from '../live/AudienceLayer';
 
 /** The 3D stage. Switching worlds swaps only the world component — audio keeps playing. */
 export function Stage() {
   const worldId = useStore((s) => s.world);
   const dpr = useStore((s) => s.dpr);
+  const liveOn = useStore((s) => s.liveOn);
   const World = WORLDS.find((w) => w.id === worldId)?.Component;
   return (
     <Canvas
@@ -46,6 +48,7 @@ export function Stage() {
       <CameraRig />
       <PerfMonitor />
       <Suspense fallback={null}>{World ? <World key={worldId} /> : null}</Suspense>
+      {liveOn && <AudienceLayer />}
       <PostFX />
     </Canvas>
   );

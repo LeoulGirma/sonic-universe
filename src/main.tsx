@@ -1,6 +1,8 @@
 import { createRoot } from 'react-dom/client';
 import { Stage } from './engine/Stage';
 import { Overlay } from './ui/Overlay';
+import { LiveHud } from './live/LiveHud';
+import { useStore } from './store/useStore';
 import './ui/styles.css';
 import './engine/debug';
 
@@ -13,6 +15,7 @@ function hasWebGL2() {
 }
 
 function App() {
+  const liveOn = useStore((s) => s.liveOn);
   if (!hasWebGL2())
     return (
       <div className="nogl">
@@ -25,6 +28,7 @@ function App() {
     <>
       <Stage />
       <Overlay />
+      {liveOn && <LiveHud />}
     </>
   );
 }

@@ -401,3 +401,43 @@ input[type='range']::-moz-range-thumb { width: 13px; height: 13px; border: 0; bo
   .mixq { top: calc(max(12px, env(safe-area-inset-top)) + 54px); left: 8px; right: 8px; max-height: 40vh; }
   .ui--hidden .transport { transform: translate(-50%, 12px); }
 }
+
+/* ---------- TikTok LIVE audience (live/) ---------- */
+.livehud { position: fixed; inset: 0; pointer-events: none; z-index: 9; font-family: var(--font-ui); }
+.livebubble {
+  position: absolute; transform: translateX(-50%); max-width: min(320px, 46vw);
+  display: grid; gap: 1px; padding: 7px 12px 8px; border-radius: 14px;
+  background: rgba(10, 10, 24, 0.62); border: 1px solid var(--glass-edge);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  animation: livebubble 5.2s ease forwards;
+}
+.livebubble b { font-size: 12.5px; font-weight: 700; color: var(--accent); letter-spacing: 0.01em; }
+.livebubble span { font-size: 14px; line-height: 1.35; color: var(--ink); overflow-wrap: anywhere; }
+@keyframes livebubble { 0% { opacity: 0; transform: translate(-50%, 8px) scale(0.96); } 8% { opacity: 1; transform: translate(-50%, 0) scale(1); } 80% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -10px); } }
+.livebanner {
+  position: absolute; left: 50%; top: max(72px, calc(env(safe-area-inset-top, 0px) + 64px)); transform: translateX(-50%);
+  display: grid; justify-items: center; gap: 2px; padding: 12px 22px 13px; border-radius: 18px; text-align: center;
+  background: rgba(10, 10, 24, 0.66); border: 1px solid rgba(255, 214, 240, 0.35);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); animation: livebanner 0.5s cubic-bezier(.2,.8,.2,1);
+  max-width: calc(100vw - 32px);
+}
+.livebanner strong { font: 700 clamp(16px, 2.4vw, 22px)/1.2 var(--font-display); color: #fff; }
+.livebanner em { font-style: normal; font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink-2); }
+.livebanner--t1 { border-color: rgba(255, 181, 71, 0.6); box-shadow: 0 0 40px -6px rgba(255, 181, 71, 0.45); }
+.livebanner--t2, .livebanner--t3 { border-color: rgba(124, 240, 255, 0.8); box-shadow: 0 0 70px -4px rgba(124, 240, 255, 0.6); }
+.livebanner--t2 em, .livebanner--t3 em { color: #7cf0ff; }
+@keyframes livebanner { from { opacity: 0; transform: translate(-50%, -12px) scale(0.92); } to { opacity: 1; transform: translate(-50%, 0) scale(1); } }
+.livemeter {
+  position: absolute; right: max(16px, env(safe-area-inset-right, 0px)); top: 50%; transform: translateY(-50%);
+  display: flex; flex-direction: column; align-items: center; gap: 10px; width: 64px; text-align: center;
+}
+.livemeter__bar { width: 12px; height: min(240px, 34vh); border-radius: 8px; background: rgba(255, 255, 255, 0.1); border: 1px solid var(--glass-edge); overflow: hidden; display: flex; align-items: flex-end; }
+.livemeter__fill { width: 100%; height: 100%; transform-origin: bottom; transform: scaleY(0.02); background: linear-gradient(to top, #ff5ea8, #ffb547 60%, #7cf0ff); transition: transform 0.25s ease; }
+.livemeter__label { display: grid; gap: 2px; font-size: 10.5px; line-height: 1.3; color: var(--ink-2); }
+.livemeter__label small { font-size: 12px; color: var(--ink); font-variant-numeric: tabular-nums; }
+.livemeter--fired .livemeter__bar { box-shadow: 0 0 30px 4px rgba(124, 240, 255, 0.8); }
+.livestatus { position: absolute; left: 50%; bottom: max(96px, calc(env(safe-area-inset-bottom, 0px) + 96px)); transform: translateX(-50%); padding: 6px 12px; border-radius: 999px; font-size: 12px; color: var(--ink-2); background: rgba(10, 10, 24, 0.6); border: 1px solid var(--glass-edge); }
+.livetests { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.livetests .btn { height: 32px; padding: 0 12px; font-size: 12.5px; }
+.liveurl { width: 100%; margin-top: 6px; height: 34px; padding: 0 10px; border-radius: var(--radius-sm); border: 1px solid var(--glass-edge); background: rgba(0, 0, 0, 0.3); color: var(--ink); font: 13px/1 ui-monospace, monospace; }
+@media (prefers-reduced-motion: reduce) { .livebubble, .livebanner { animation: none; } }

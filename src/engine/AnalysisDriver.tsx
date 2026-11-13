@@ -3,6 +3,7 @@ import { audioEngine } from '../audio/AudioEngine';
 import { useStore } from '../store/useStore';
 import { drives, mapper } from './frameBus';
 import { conductor } from '../mapping/conductor';
+import { applyLive } from '../live/liveEvents';
 
 const MOOD_WORLDS = ['valley', 'geometric', 'tunnel', 'ink'];
 
@@ -12,6 +13,7 @@ export function AnalysisDriver() {
     const { gains, sensitivity, mood, world } = useStore.getState();
     const f = audioEngine.analyse(dt);
     mapper.update(f, gains, sensitivity, dt);
+    if (useStore.getState().liveOn) applyLive(drives(), dt);
     conductor.update(dt, drives(), mood && MOOD_WORLDS.includes(world));
   }, -10);
   return null;

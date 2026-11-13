@@ -99,6 +99,10 @@ export interface AppState {
   cinematic: boolean;
   frozen: boolean;
   showPerf: boolean;
+  /** TikTok LIVE audience mode: viewers' comments, gifts and likes drive the visuals (see live/) */
+  liveOn: boolean;
+  liveUrl: string;
+  likeGoal: number;
   showFamilies: boolean; // the sound-family legend
   dev: boolean; // developer mode: earlier builds on the start screen for comparison
   mood: boolean; // song mood: the world sets itself up for each song (#valley-mood)
@@ -143,6 +147,9 @@ export const useStore = create<AppState>((set) => ({
   cinematic: typeof window === 'undefined' || !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches,
   frozen: false,
   showPerf: false,
+  liveOn: (() => { try { return /[?&]live\b/.test(location.search) || localStorage.getItem('sonic.live') === '1'; } catch { return false; } })(),
+  liveUrl: (() => { try { return localStorage.getItem('sonic.liveUrl') || 'ws://localhost:21213/'; } catch { return 'ws://localhost:21213/'; } })(),
+  likeGoal: (() => { try { return Number(localStorage.getItem('sonic.likeGoal')) || 500; } catch { return 500; } })(),
   showFamilies: false,
   dev: (() => { try { return /[?&]dev\b/.test(location.search) || localStorage.getItem('sonic.dev') === '1'; } catch { return false; } })(),
   mood: typeof window !== 'undefined' && /-mood$/.test(location.hash),

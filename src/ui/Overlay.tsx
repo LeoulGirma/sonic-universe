@@ -5,6 +5,7 @@ import { PALETTES } from '../engine/palettes';
 import { drives, features, perf } from '../engine/frameBus';
 import { IS_MOBILE, LifeParams, LiquidParams, TunnelParams, MAX_DPR, Quality, QUALITY_SIDE, qualityLabel, SimParams, useStore } from '../store/useStore';
 import { WORLDS } from '../worlds/registry';
+import { live, onLiveStatus, testLive } from '../live/liveEvents';
 import {
   ICamera, IClose, IExitFull, IFamilies, IFile, IFreeze, IFull, IMic, IMix, IPause, IPerf, IPlay, IPlus, IScreen, ISettings, ISkip, ISpark, IWorlds,
 } from './icons';
@@ -621,6 +622,29 @@ const PARAM_META: { k: keyof SimParams; label: string; min: number; max: number;
   { k: 'bloom', label: 'Glow', min: 0, max: 3, note: 'render' },
 ];
 
+function LiveSettings() {
+  const st = useStore();
+  const [status, setStatus] = useState(live.status);
+  useEffect(() => onLiveStatus(setStatus), []);
+  return (
+    <>
+      <p className="hint">{status === 'on' ? 'Connected to TikFinity. Viewers who comment, gift or follow become stars.' : 'Start TikFinity on this computer and connect it to your LIVE; events arrive through its local WebSocket.'}</p>
+      <input className="liveurl" aria-label="TikFinity WebSocket address" defaultValue={st.liveUrl}
+        onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== st.liveUrl) { st.set({ liveUrl: v }); try { localStorage.setItem('sonic.liveUrl', v); } catch { /* private mode */ } } }} />
+      <Slider label="Likes per drop" value={st.likeGoal} min={100} max={5000} step={50}
+        onChange={(v) => { st.set({ likeGoal: v }); try { localStorage.setItem('sonic.likeGoal', String(v)); } catch { /* private mode */ } }} format={(v) => `${Math.round(v)}`} />
+      <p className="hint">Test before going live (only you see these unless you are streaming):</p>
+      <div className="livetests">
+        <button className="btn" onClick={() => testLive('chat')}>Comment</button>
+        <button className="btn" onClick={() => testLive('gift')}>Small gift</button>
+        <button className="btn" onClick={() => testLive('bigGift')}>Big gift</button>
+        <button className="btn" onClick={() => testLive('likes')}>Likes</button>
+        <button className="btn" onClick={() => testLive('follow')}>Follow</button>
+      </div>
+    </>
+  );
+}
+
 function SettingsPanel() {
   const st = useStore();
   const tab = st.panel;
@@ -664,6 +688,9 @@ function SettingsPanel() {
             format={(v) => `${v > 0 ? '+' : ''}${Math.round(v)} ms`} />
           <p className="hint">For song files. Raise it if the visuals land before you hear the beat (TVs and Bluetooth speakers add delay); the browser's own reported delay is already included.</p>
           <Toggle label="Cinematic camera" on={st.cinematic} onChange={(v) => st.set({ cinematic: v })} />
+          <h3>TikTok LIVE</h3>
+          <Toggle label="Audience mode: comments, gifts and likes drive the visuals" on={st.liveOn} onChange={(v) => { st.set({ liveOn: v }); try { localStorage.setItem('sonic.live', v ? '1' : '0'); } catch { /* private mode */ } }} />
+          {st.liveOn && <LiveSettings />}
           <Toggle label="Freeze simulation" on={st.frozen} onChange={(v) => st.set({ frozen: v })} />
           <Toggle label="Performance readout" on={st.showPerf} onChange={(v) => st.set({ showPerf: v })} />
           <Toggle label="Developer mode (earlier builds on the start screen)" on={st.dev} onChange={(v) => { st.set({ dev: v }); try { localStorage.setItem('sonic.dev', v ? '1' : '0'); } catch { /* private mode */ } }} />
